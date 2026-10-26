@@ -8,6 +8,12 @@ export interface Profile {
   display_name: string;
   avatar_emoji: string | null;
   created_at: string;
+  /** Optional detail — all nullable so a fresh account is already complete. */
+  full_name: string | null;
+  family_role: string | null;
+  phone: string | null;
+  birthday: string | null;
+  note: string | null;
 }
 
 export interface Wallet {

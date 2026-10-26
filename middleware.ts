@@ -117,5 +117,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|icons|favicon.ico|manifest.webmanifest|.*\\.png$).*)'],
+  // huong-dan.html is the user guide: a static help page that should open even
+  // for someone who is not signed in, so it never reaches the redirect above.
+  matcher: [
+    '/((?!_next/static|_next/image|icons|brand|favicon.ico|manifest.webmanifest|huong-dan.html|.*\\.png$).*)',
+  ],
 };

@@ -24,14 +24,61 @@ interface BudgetFormProps {
 export default function BudgetForm({ wallets, categories, rows }: BudgetFormProps) {
   const [state, formAction, pending] = useActionState(saveBudgets, INITIAL);
   const [walletId, setWalletId] = useState(wallets[0]?.id ?? '');
+  const [open, setOpen] = useState(false);
 
   if (wallets.length === 0) {
     return <p className="card text-sm text-muted">Chưa có ví nào để đặt hạn mức.</p>;
   }
 
+  // Twelve categories with inputs and progress bars is most of a screen, and
+  // limits are set once and then left alone, so the card stays shut until asked.
+  if (!open) {
+    const set = categories.filter((c) => (rows[`${walletId}:${c.id}`]?.limit ?? 0) > 0);
+    const over = set.filter((c) => {
+      const row = rows[`${walletId}:${c.id}`];
+      return row && row.spent > row.limit;
+    });
+
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="card tap flex w-full items-center gap-3 text-left"
+      >
+        <span aria-hidden className="text-2xl">
+          🎯
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold">Hạn mức tháng</span>
+          <span className="mt-0.5 block truncate text-xs text-muted">
+            {set.length === 0
+              ? 'Chưa đặt hạn mức nào · chạm để đặt'
+              : `${set.length}/${categories.length} danh mục đã đặt`}
+            {over.length > 0 && (
+              <span className="font-medium text-expense"> · {over.length} khoản vượt</span>
+            )}
+          </span>
+        </span>
+        <span aria-hidden className="shrink-0 text-muted">
+          ›
+        </span>
+      </button>
+    );
+  }
+
   return (
     <form action={formAction} className="card space-y-3">
-      <h2 className="text-sm font-medium">Hạn mức tháng</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Hạn mức tháng</h2>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="tap -mr-2 flex h-11 w-11 items-center justify-center rounded-2xl text-muted"
+          aria-label="Thu gọn hạn mức"
+        >
+          ⌃
+        </button>
+      </div>
       <input type="hidden" name="wallet_id" value={walletId} />
 
       <div className="flex gap-2 overflow-x-auto pb-1">

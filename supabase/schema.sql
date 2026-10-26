@@ -16,6 +16,14 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+-- Optional detail the household may fill in later; every field stays nullable
+-- so an account created by the signup trigger is complete without them.
+alter table public.profiles add column if not exists full_name text;
+alter table public.profiles add column if not exists family_role text;
+alter table public.profiles add column if not exists phone text;
+alter table public.profiles add column if not exists birthday date;
+alter table public.profiles add column if not exists note text;
+
 create table if not exists public.wallets (
   id uuid primary key default gen_random_uuid(),
   name text not null,

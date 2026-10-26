@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FEFCF5" />
+    <title>Hướng dẫn sử dụng · Cơm Áo Gạo Tiền</title>
+    <style>
+      /* Standalone on purpose: this file is served straight from /public and
+         never passes through the app's build, so it carries its own styles. */
+      :root {
+        --bg: #fefcf5;
+        --surface: #ffffff;
+        --border: #eadbc0;
+        --fg: #471806;
+        --muted: #7a5c49;
+        --brand: #f97606;
+        --brand-strong: #a84a02;
+        --accent: #fdb826;
+        --income: #3f7320;
+        --expense: #b8321a;
+        color-scheme: light;
+      }
+
+      * { box-sizing: border-box; }
+
+      html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+
+      body {
+        margin: 0;
+        padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 40px);
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 0; }
+
+      header { text-align: center; margin-bottom: 28px; }
+      header img { width: min(70vw, 260px); height: auto; }
+      header p { color: var(--muted); font-size: 15px; margin: 4px 0 0; }
+
+      nav {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 14px 18px;
+        margin-bottom: 28px;
+      }
+      nav strong { display: block; font-size: 14px; margin-bottom: 8px; }
+      nav ol { margin: 0; padding-left: 20px; }
+      nav li { margin: 4px 0; }
+      nav a { color: var(--brand-strong); text-decoration: none; font-weight: 500; }
+
+      section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 20px;
+        margin-bottom: 18px;
+        box-shadow: 0 1px 2px rgb(71 24 6 / 0.05), 0 6px 20px rgb(71 24 6 / 0.06);
+        scroll-margin-top: 16px;
+      }
+
+      h2 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 20px;
+        margin: 0 0 6px;
+      }
+      h2 .ico {
+        flex: none;
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        border-radius: 14px;
+        font-size: 20px;
+      }
+
+      .lede { color: var(--muted); margin: 0 0 14px; font-size: 15px; }
+
+      ol.steps { margin: 0; padding-left: 0; list-style: none; counter-reset: s; }
+      ol.steps > li {
+        counter-increment: s;
+        position: relative;
+        padding-left: 36px;
+        margin-bottom: 12px;
+      }
+      ol.steps > li::before {
+        content: counter(s);
+        position: absolute;
+        left: 0;
+        top: 1px;
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        background: var(--brand);
+        color: var(--fg);
+        font-size: 13px;
+        font-weight: 700;
+        border-radius: 999px;
+      }
+
+      .tip {
+        margin-top: 14px;
+        background: #fff7e8;
+        border: 1px solid var(--accent);
+        border-radius: 16px;
+        padding: 12px 14px;
+        font-size: 14px;
+      }
+      .tip b { color: var(--brand-strong); }
+
+      .warn {
+        margin-top: 14px;
+        background: #fdf0ec;
+        border: 1px solid #f0c3b6;
+        border-radius: 16px;
+        padding: 12px 14px;
+        font-size: 14px;
+      }
+      .warn b { color: var(--expense); }
+
+      table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+      th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+      th { color: var(--muted); font-weight: 600; }
+
+      .pill {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .pill.overdue { background: #fdeae6; color: var(--expense); }
+      .pill.soon { background: #fff1dc; color: var(--brand-strong); }
+      .pill.paid { background: #eaf3e3; color: var(--income); }
+
+      footer { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0 0; }
+
+      .back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 48px;
+        padding: 0 20px;
+        background: var(--brand);
+        color: var(--fg);
+        font-weight: 600;
+        text-decoration: none;
+        border-radius: 16px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <header>
+        <img src="/brand/logo.png" alt="Cơm Áo Gạo Tiền" />
+        <p>Hướng dẫn sử dụng cho cả nhà</p>
+      </header>
+
+      <nav>
+        <strong>Có gì trong này</strong>
+        <ol>
+          <li><a href="#tong-quan">Tổng quan — xem nhà mình đang có bao nhiêu</a></li>
+          <li><a href="#nhap-nhanh">Nhập nhanh — ghi một khoản chi</a></li>
+          <li><a href="#giao-dich">Giao dịch — xem lại và sửa</a></li>
+          <li><a href="#vi-quy">Ví &amp; Quỹ — tiền riêng và tiền chung</a></li>
+          <li><a href="#hoa-don">Hoá đơn định kỳ — khỏi quên tiền điện</a></li>
+          <li><a href="#cai-dat">Cài đặt — hồ sơ và hạn mức</a></li>
+        </ol>
+      </nav>
+
+      <section id="tong-quan">
+        <h2><span class="ico" aria-hidden="true">📊</span> Tổng quan</h2>
+        <p class="lede">Màn hình đầu tiên. Nhìn một cái là biết nhà mình đang có bao nhiêu.</p>
+        <ol class="steps">
+          <li><b>Tổng số dư</b> — cộng tất cả ví bạn thấy được: ví riêng của bạn và quỹ gia đình.</li>
+          <li><b>Thu / Chi tháng này</b> — hai ô màu xanh và đỏ ngay dưới.</li>
+          <li><b>Dòng tiền 6 tháng</b> — cột xanh là tiền vào, cột cam là tiền ra. Bấm “Xem bảng số liệu” nếu muốn đọc con số chính xác.</li>
+          <li><b>Nút làm mới</b> ↻ ở góc phải trên — bấm khi muốn kéo số liệu mới nhất về ngay.</li>
+        </ol>
+        <div class="tip">
+          <b>Mẹo:</b> Khi có hoá đơn sắp đến hạn, một ô đỏ sẽ hiện ngay đầu màn hình. Bấm vào đó đi thẳng tới danh sách hoá đơn.
+        </div>
+      </section>
+
+      <section id="nhap-nhanh">
+        <h2><span class="ico" aria-hidden="true">➕</span> Nhập nhanh</h2>
+        <p class="lede">Nút tròn cam ở giữa thanh dưới. Đây là việc bạn làm nhiều nhất.</p>
+        <ol class="steps">
+          <li>
+            <b>Tải ảnh lên trước.</b> Bấm <b>Chụp mới</b> để chụp hoá đơn, hoặc <b>Từ album</b> để chọn ảnh đã lưu sẵn — kể cả ảnh chụp màn hình thông báo biến động số dư ngân hàng.
+          </li>
+          <li>
+            <b>Chờ vài giây.</b> AI đọc ảnh và tự điền số tiền, nội dung, ngày và danh mục. Có thông báo hiện lên khi xong.
+          </li>
+          <li>
+            <b>Kéo xuống kiểm tra.</b> AI đọc rất tốt nhưng không phải lúc nào cũng đúng — liếc qua số tiền một lượt.
+          </li>
+          <li><b>Bấm “Lưu giao dịch”</b> ở cuối màn hình.</li>
+        </ol>
+        <div class="tip">
+          <b>Không có ảnh?</b> Bỏ qua bước 1, gõ tay cũng được. Ô số tiền hiểu cả cách viết tắt: gõ <b>35k</b> ra 35.000, gõ <b>1tr2</b> ra 1.200.000.
+        </div>
+        <div class="warn">
+          <b>Tải trùng ảnh:</b> Nếu bạn chọn nhầm một ảnh đã nhập rồi, app sẽ báo ngay “Ảnh đã tải lên rồi” kèm số tiền và ngày đã ghi — để bạn khỏi nhập đôi.
+        </div>
+      </section>
+
+      <section id="giao-dich">
+        <h2><span class="ico" aria-hidden="true">🧾</span> Giao dịch</h2>
+        <p class="lede">Cuốn sổ của cả nhà, xem theo lịch từng tháng.</p>
+        <ol class="steps">
+          <li><b>Lịch tháng</b> — mỗi ô ngày hiện số tiền đã chi hôm đó. Chạm vào một ngày để chỉ xem ngày đó.</li>
+          <li><b>Mũi tên ‹ ›</b> hai bên tên tháng để xem tháng trước hoặc tháng sau.</li>
+          <li><b>Chạm vào một khoản</b> trong danh sách để sửa lại nếu nhập sai.</li>
+        </ol>
+        <div class="warn">
+          <b>Lưu ý:</b> Bạn chỉ sửa và xoá được khoản <i>do chính bạn nhập</i>. Khoản của người khác trong nhà thì chỉ xem — để lịch sử chung không bị sửa sau lưng nhau.
+        </div>
+      </section>
+
+      <section id="vi-quy">
+        <h2><span class="ico" aria-hidden="true">👛</span> Ví &amp; Quỹ</h2>
+        <p class="lede">Chỗ phân biệt tiền riêng và tiền chung.</p>
+        <table>
+          <tr>
+            <th>Loại</th>
+            <th>Ai thấy được</th>
+          </tr>
+          <tr>
+            <td><b>👤 Ví cá nhân</b></td>
+            <td>Chỉ mình bạn. Người khác trong nhà không thấy.</td>
+          </tr>
+          <tr>
+            <td><b>👨‍👩‍👧‍👦 Quỹ gia đình</b></td>
+            <td>Cả nhà cùng xem và cùng ghi được.</td>
+          </tr>
+        </table>
+        <ol class="steps" style="margin-top: 14px">
+          <li><b>Thêm ví cá nhân</b> — ví dụ “Quỹ du lịch”, “Tiền tiêu vặt”.</li>
+          <li><b>Đổi tên</b> ví bất cứ lúc nào.</li>
+          <li><b>Ẩn ví</b> khi không dùng nữa.</li>
+        </ol>
+        <div class="tip">
+          <b>Vì sao là “ẩn” chứ không phải “xoá”?</b> Xoá một ví sẽ xoá theo toàn bộ giao dịch trong đó. Nên nếu ví đã có lịch sử, app chỉ ẩn đi — số liệu cũ vẫn còn nguyên. Ví chưa có giao dịch nào thì xoá hẳn.
+        </div>
+      </section>
+
+      <section id="hoa-don">
+        <h2><span class="ico" aria-hidden="true">🔔</span> Hoá đơn định kỳ</h2>
+        <p class="lede">Tiền nhà, điện, nước, internet, học phí — những khoản tháng nào cũng phải trả.</p>
+        <ol class="steps">
+          <li>Vào <b>Ví &amp; Quỹ</b> → bấm thẻ <b>Hoá đơn định kỳ</b>.</li>
+          <li>Bấm <b>+ Thêm hoá đơn định kỳ</b>, điền tên, số tiền, chu kỳ (tháng/quý/năm), ngày đến hạn và ai lo khoản đó.</li>
+          <li>Khi đã trả xong, bấm nút <b>Đã đóng</b> màu xanh trên hoá đơn đó.</li>
+        </ol>
+        <p style="margin: 14px 0 0; font-size: 14px">Các trạng thái bạn sẽ thấy:</p>
+        <table>
+          <tr>
+            <td><span class="pill overdue">Quá hạn</span></td>
+            <td>Đã qua ngày phải trả mà chưa bấm “Đã đóng”.</td>
+          </tr>
+          <tr>
+            <td><span class="pill soon">Sắp đến hạn</span></td>
+            <td>Còn 7 ngày hoặc ít hơn.</td>
+          </tr>
+          <tr>
+            <td><span class="pill paid">Đã đóng</span></td>
+            <td>Kỳ này xong rồi, kỳ sau còn xa.</td>
+          </tr>
+        </table>
+        <div class="tip">
+          <b>Ngày 29, 30, 31:</b> Nếu bạn đặt hạn ngày 31 mà tháng đó chỉ có 30 ngày, app tự lùi về ngày cuối tháng.
+        </div>
+      </section>
+
+      <section id="cai-dat">
+        <h2><span class="ico" aria-hidden="true">⚙️</span> Cài đặt</h2>
+        <p class="lede">Hồ sơ cá nhân, hạn mức chi tiêu và đăng xuất.</p>
+        <ol class="steps">
+          <li>
+            <b>Hồ sơ</b> — chạm vào thẻ hồ sơ để mở ra. Đổi ảnh đại diện, tên hiển thị, và bổ sung họ tên, vai trò trong nhà, số điện thoại, ngày sinh.
+          </li>
+          <li>
+            <b>Hạn mức tháng</b> — chạm để mở. Đặt mức trần cho từng danh mục, ví dụ Ăn uống 3 triệu/tháng. App vẽ thanh tiến độ so với số đã chi, và chuyển đỏ khi vượt.
+          </li>
+          <li><b>Đăng xuất</b> ở cuối màn hình.</li>
+        </ol>
+        <div class="tip">
+          <b>Đăng nhập một lần là đủ.</b> App nhớ bạn tới 400 ngày, chỉ phải đăng nhập lại nếu xoá app hoặc xoá dữ liệu trình duyệt.
+        </div>
+      </section>
+
+      <footer>
+        <a class="back" href="/settings">← Quay lại app</a>
+        <p>Cơm Áo Gạo Tiền — chi tiêu của nhà mình</p>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 import Navigation from '@/components/Navigation';
+import OnboardingTour from '@/components/OnboardingTour';
 import RealtimeSync from '@/components/RealtimeSync';
 import SplashScreen from '@/components/SplashScreen';
 
@@ -17,6 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Navigation />
       <RealtimeSync />
       <SplashScreen />
+      <OnboardingTour />
     </div>
   );
 }

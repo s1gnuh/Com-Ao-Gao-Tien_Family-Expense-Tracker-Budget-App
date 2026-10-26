@@ -21,9 +21,9 @@ Một cuốn sổ chi tiêu chung cho đúng **bốn người trong một nhà**
 |---|---|---|
 | <img src="docs/screenshots/01-splash.png" width="230" /> | <img src="docs/screenshots/02-tong-quan.png" width="230" /> | <img src="docs/screenshots/03-giao-dich.png" width="230" /> |
 
-| Nhập nhanh | Cài đặt | Đăng nhập |
+| Nhập nhanh | Cài đặt | Hướng dẫn lần đầu |
 |---|---|---|
-| <img src="docs/screenshots/04-nhap-nhanh.png" width="230" /> | <img src="docs/screenshots/07-cai-dat.png" width="230" /> | <img src="docs/screenshots/08-dang-nhap.png" width="230" /> |
+| <img src="docs/screenshots/04-nhap-nhanh.png" width="230" /> | <img src="docs/screenshots/07-cai-dat.png" width="230" /> | <img src="docs/screenshots/09-huong-dan-popup.png" width="230" /> |
 
 <sub>Chụp ở khung iPhone 13 Pro (390×844 @3x) bằng Playwright, trên dữ liệu thật.</sub>
 
@@ -37,6 +37,7 @@ Một cuốn sổ chi tiêu chung cho đúng **bốn người trong một nhà**
 - **Hạn mức theo danh mục** — thanh tiến độ so với chi tiêu thực tế trong tháng.
 - **Đồng bộ thời gian thực** — Supabase Realtime, cộng nút làm mới thủ công cho lúc iOS ngắt kết nối khi app chạy nền.
 - **Sửa / xoá giao dịch** — chỉ người tạo mới thao tác được, do RLS quyết định.
+- **Hướng dẫn sử dụng** — popup 4 bước cho lần mở app đầu tiên, cộng một trang hướng dẫn đầy đủ tại [`/huong-dan.html`](public/huong-dan.html) mở được cả khi chưa đăng nhập.
 
 ## Công nghệ
 

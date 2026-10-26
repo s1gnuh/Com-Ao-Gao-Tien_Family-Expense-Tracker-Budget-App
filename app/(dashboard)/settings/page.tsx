@@ -69,13 +69,27 @@ export default async function SettingsPage() {
     <div className="space-y-4 py-4">
       <h1 className="text-2xl font-semibold">Cài đặt</h1>
 
-      <ProfileForm
-        displayName={profile?.display_name ?? username}
-        avatarEmoji={profile?.avatar_emoji ?? null}
-        username={username}
-      />
+      <ProfileForm profile={profile} username={username} fallbackName={username} />
 
       <BudgetForm wallets={wallets} categories={categories} rows={rows} />
+
+      <a
+        href="/huong-dan.html"
+        className="card tap flex w-full items-center gap-3 text-left"
+      >
+        <span aria-hidden className="text-2xl">
+          📖
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold">Hướng dẫn sử dụng</span>
+          <span className="mt-0.5 block text-xs text-muted">
+            Từng màn hình một, ngắn gọn cho cả nhà
+          </span>
+        </span>
+        <span aria-hidden className="shrink-0 text-muted">
+          ›
+        </span>
+      </a>
 
       <form action={signOutAction}>
         <button

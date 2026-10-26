@@ -25,9 +25,25 @@ export async function updateProfile(
 
   const emoji = String(formData.get('avatar_emoji') ?? '').trim().slice(0, 8) || null;
 
+  const optional = (key: string, max: number) => {
+    const value = String(formData.get(key) ?? '').trim().slice(0, max);
+    return value.length > 0 ? value : null;
+  };
+
+  const birthdayRaw = String(formData.get('birthday') ?? '').trim();
+  const birthday = /^\d{4}-\d{2}-\d{2}$/.test(birthdayRaw) ? birthdayRaw : null;
+
   const { error } = await supabase
     .from('profiles')
-    .update({ display_name: displayName, avatar_emoji: emoji })
+    .update({
+      display_name: displayName,
+      avatar_emoji: emoji,
+      full_name: optional('full_name', 80),
+      family_role: optional('family_role', 20),
+      phone: optional('phone', 20),
+      birthday,
+      note: optional('note', 200),
+    })
     .eq('id', auth.user.id);
 
   if (error) return { error: 'Không lưu được hồ sơ.', ok: false };
