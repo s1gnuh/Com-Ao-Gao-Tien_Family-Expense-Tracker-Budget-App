@@ -2,7 +2,7 @@ import Link from 'next/link';
 import BalanceCard from '@/components/dashboard/BalanceCard';
 import CashFlowChart, { type CashFlowPoint } from '@/components/dashboard/CashFlowChart';
 import { createClient } from '@/lib/supabase/server';
-import { formatMonth, formatVND, toDateInput } from '@/lib/formatters';
+import { formatMonth, formatVND } from '@/lib/formatters';
 import type { Wallet } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -40,40 +40,47 @@ function buildMonthSlots(now: Date): MonthSlot[] {
 export default async function DashboardPage() {
   const supabase = await createClient();
   const now = new Date();
-  const since = toDateInput(new Date(now.getFullYear(), now.getMonth() - 5, 1));
 
-  const [balancesResult, transactionsResult] = await Promise.all([
+  const [balancesResult, cashflowResult] = await Promise.all([
     supabase.from('wallet_balances').select('wallet_id,name,type,owner_id,balance'),
-    supabase.from('transactions').select('type,amount,occurred_at').gte('occurred_at', since),
+    // Aggregated in Postgres: six rows back instead of six months of transactions.
+    supabase.rpc('monthly_cashflow', { p_months: 6 }),
   ]);
 
-  if (balancesResult.error?.code === 'PGRST205') {
+  const missing =
+    balancesResult.error?.code === 'PGRST205'
+      ? 'wallet_balances'
+      : cashflowResult.error?.code === 'PGRST202'
+        ? 'monthly_cashflow'
+        : null;
+
+  if (missing) {
     return (
       <div className="space-y-4 py-4">
         <h1 className="text-2xl font-semibold">Tổng quan</h1>
         <p className="card text-sm text-muted">
-          Thiếu view <code>wallet_balances</code>. Mở Supabase SQL Editor và chạy lại{' '}
-          <code>supabase/schema.sql</code> để tạo.
+          Thiếu <code>{missing}</code> trong cơ sở dữ liệu. Mở Supabase SQL Editor và chạy lại{' '}
+          <code>supabase/schema.sql</code>.
         </p>
       </div>
     );
   }
 
   const balances = (balancesResult.data ?? []) as WalletBalance[];
-  const transactions = (transactionsResult.data ?? []) as {
-    type: 'income' | 'expense';
-    amount: number;
-    occurred_at: string;
+  const cashflow = (cashflowResult.data ?? []) as {
+    month: string;
+    income: number;
+    expense: number;
   }[];
 
   const slots = buildMonthSlots(now);
   const byKey = new Map(slots.map((slot) => [slot.key, slot]));
 
-  for (const transaction of transactions) {
-    const slot = byKey.get(transaction.occurred_at.slice(0, 7));
+  for (const row of cashflow) {
+    const slot = byKey.get(row.month.slice(0, 7));
     if (!slot) continue;
-    if (transaction.type === 'income') slot.thu += Number(transaction.amount);
-    else slot.chi += Number(transaction.amount);
+    slot.thu = Number(row.income);
+    slot.chi = Number(row.expense);
   }
 
   const current = slots[slots.length - 1]!;

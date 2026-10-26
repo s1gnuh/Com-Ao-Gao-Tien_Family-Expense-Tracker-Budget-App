@@ -58,6 +58,10 @@ create table if not exists public.transactions (
 
 create index if not exists transactions_wallet_date_idx on public.transactions (wallet_id, occurred_at desc);
 create index if not exists transactions_category_idx on public.transactions (category_id);
+-- The reporting functions below scan by date across every wallet the caller can
+-- reach, which the wallet-leading index above cannot serve.
+create index if not exists transactions_date_idx on public.transactions (occurred_at desc);
+create index if not exists transactions_author_idx on public.transactions (created_by);
 
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
@@ -202,11 +206,92 @@ from public.wallets w
 left join public.transactions t on t.wallet_id = w.id
 group by w.id, w.name, w.type, w.owner_id;
 
+-- ------------------------------------------------------- reporting functions
+
+-- These aggregate in Postgres and return a handful of rows, so a phone never
+-- downloads raw transactions just to add them up. All are security invoker, so
+-- the caller's RLS decides which wallets are counted — they can reveal nothing
+-- a plain select would not.
+
+create or replace function public.monthly_cashflow(
+  p_months int default 6,
+  p_wallet uuid default null
+)
+returns table (month date, income numeric, expense numeric)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    date_trunc('month', t.occurred_at)::date,
+    coalesce(sum(t.amount) filter (where t.type = 'income'), 0),
+    coalesce(sum(t.amount) filter (where t.type = 'expense'), 0)
+  from public.transactions t
+  where t.occurred_at >= (date_trunc('month', current_date) - make_interval(months => greatest(p_months, 1) - 1))::date
+    and (p_wallet is null or t.wallet_id = p_wallet)
+  group by 1
+  order by 1;
+$$;
+
+create or replace function public.daily_totals(
+  p_from date,
+  p_to date,
+  p_wallet uuid default null
+)
+returns table (day date, income numeric, expense numeric, tx_count bigint)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    t.occurred_at,
+    coalesce(sum(t.amount) filter (where t.type = 'income'), 0),
+    coalesce(sum(t.amount) filter (where t.type = 'expense'), 0),
+    count(*)
+  from public.transactions t
+  where t.occurred_at between p_from and p_to
+    and (p_wallet is null or t.wallet_id = p_wallet)
+  group by t.occurred_at
+  order by t.occurred_at;
+$$;
+
+create or replace function public.category_breakdown(
+  p_from date,
+  p_to date,
+  p_wallet uuid default null
+)
+returns table (category_id uuid, name text, icon text, kind category_kind, spent numeric)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    c.id,
+    c.name,
+    c.icon,
+    c.kind,
+    coalesce(sum(t.amount), 0)
+  from public.transactions t
+  join public.categories c on c.id = t.category_id
+  where t.type = 'expense'
+    and t.occurred_at between p_from and p_to
+    and (p_wallet is null or t.wallet_id = p_wallet)
+  group by c.id, c.name, c.icon, c.kind
+  order by 5 desc;
+$$;
+
 -- ---------------------------------------------------------------- realtime
 
 alter table public.transactions replica identity full;
+alter table public.budgets replica identity full;
 do $$ begin
   alter publication supabase_realtime add table public.transactions;
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table public.budgets;
 exception when duplicate_object then null; end $$;
 
 -- ---------------------------------------------------------------- seed

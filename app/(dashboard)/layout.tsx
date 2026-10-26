@@ -1,4 +1,5 @@
 import Navigation from '@/components/Navigation';
+import RealtimeSync from '@/components/RealtimeSync';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -13,6 +14,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </main>
 
       <Navigation />
+      <RealtimeSync />
     </div>
   );
 }
