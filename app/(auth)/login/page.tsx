@@ -2,11 +2,40 @@
 
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import type { AuthError } from '@supabase/supabase-js';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { createClient } from '@/lib/supabase/client';
 
 type Mode = 'login' | 'register';
+
+/**
+ * Supabase failure modes a household hits in practice. The built-in mailer is
+ * capped at a couple of messages an hour on the free tier, so a burst of signup
+ * attempts reads as a flat failure unless the cause is spelled out.
+ */
+function authMessage(error: AuthError, fallback: string): string {
+  switch (error.code) {
+    case 'over_email_send_rate_limit':
+    case 'over_request_rate_limit':
+      return 'Supabase đã hết lượt gửi email miễn phí (2 mail/giờ). Chờ khoảng 1 giờ, hoặc tắt "Confirm email" trong Supabase để đăng ký ngay không cần mail.';
+    case 'user_already_exists':
+    case 'email_exists':
+      return 'Email này đã có tài khoản, thử đăng nhập nhé.';
+    case 'email_not_confirmed':
+      return 'Tài khoản chưa xác nhận email. Kiểm tra hộp thư, hoặc tắt "Confirm email" trong Supabase.';
+    case 'weak_password':
+      return 'Mật khẩu quá yếu, thử thêm chữ hoa và số.';
+    case 'email_address_invalid':
+      return 'Supabase không chấp nhận địa chỉ email này.';
+    case 'signup_disabled':
+      return 'Dự án Supabase đang tắt đăng ký tài khoản mới.';
+    case 'invalid_credentials':
+      return 'Email hoặc mật khẩu không đúng.';
+    default:
+      return fallback;
+  }
+}
 
 export default function LoginPage() {
   return (
@@ -51,7 +80,7 @@ function AuthForm() {
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (signInError) {
-      setError('Email hoặc mật khẩu không đúng.');
+      setError(authMessage(signInError, 'Email hoặc mật khẩu không đúng.'));
       setPending(false);
       return;
     }
@@ -82,11 +111,7 @@ function AuthForm() {
     });
 
     if (signUpError) {
-      setError(
-        signUpError.message.includes('already registered')
-          ? 'Email này đã có tài khoản, thử đăng nhập nhé.'
-          : 'Không tạo được tài khoản, thử lại sau.',
-      );
+      setError(authMessage(signUpError, 'Không tạo được tài khoản, thử lại sau.'));
       setPending(false);
       return;
     }
