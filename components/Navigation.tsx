@@ -83,15 +83,15 @@ export default function Navigation() {
             className="tap flex h-full flex-col items-center justify-center gap-1"
           >
             <span
-              className={`-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg ring-4 ring-surface ${
-                addActive ? 'bg-brand/80' : 'bg-brand'
+              className={`-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-brand-ink shadow-lg ring-4 ring-surface ${
+                addActive ? 'bg-accent' : 'bg-brand'
               }`}
             >
               <svg viewBox="0 0 24 24" aria-hidden className="h-7 w-7" {...STROKE} strokeWidth={2.2}>
                 <path d="M12 5.5v13M5.5 12h13" />
               </svg>
             </span>
-            <span className={`text-[10px] font-medium ${addActive ? 'text-brand' : 'text-muted'}`}>
+            <span className={`text-[10px] font-medium ${addActive ? 'text-brand-strong' : 'text-muted'}`}>
               Nhập nhanh
             </span>
           </Link>
@@ -118,7 +118,7 @@ function Tab({ href, label, Icon, active }: TabProps) {
         href={href}
         aria-current={active ? 'page' : undefined}
         className={`tap flex h-full flex-col items-center justify-center gap-0.5 ${
-          active ? 'text-brand' : 'text-muted'
+          active ? 'text-brand-strong' : 'text-muted'
         }`}
       >
         <Icon />

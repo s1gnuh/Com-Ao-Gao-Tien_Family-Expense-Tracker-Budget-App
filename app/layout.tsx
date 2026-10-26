@@ -34,14 +34,23 @@ export const viewport: Viewport = {
   // Lets the layout paint under the notch and home indicator.
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f2f2f7' },
-    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+    { media: '(prefers-color-scheme: light)', color: '#FFF8EC' },
+    { media: '(prefers-color-scheme: dark)', color: '#1A140E' },
   ],
 };
+
+/**
+ * Runs before first paint so a session that already saw the splash never gets
+ * a flash of it. Doing this in React would be a frame too late.
+ */
+const HIDE_SEEN_SPLASH = `try{if(sessionStorage.getItem('cagt-splash-shown')==='1'){document.documentElement.dataset.splash='seen'}}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="vi">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: HIDE_SEEN_SPLASH }} />
+      </head>
       <body>{children}</body>
     </html>
   );

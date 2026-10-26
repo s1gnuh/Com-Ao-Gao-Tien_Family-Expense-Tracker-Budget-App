@@ -3,9 +3,9 @@ import type { ButtonHTMLAttributes } from 'react';
 type Variant = 'primary' | 'secondary' | 'ghost';
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-brand text-white',
+  primary: 'bg-brand text-brand-ink',
   secondary: 'border border-border bg-surface text-fg',
-  ghost: 'text-brand',
+  ghost: 'text-brand-strong',
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

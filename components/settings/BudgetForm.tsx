@@ -43,7 +43,7 @@ export default function BudgetForm({ wallets, categories, rows }: BudgetFormProp
             aria-pressed={walletId === wallet.id}
             className={`tap min-h-[40px] shrink-0 rounded-xl border px-3 text-xs font-medium ${
               walletId === wallet.id
-                ? 'border-brand bg-brand/10 text-brand'
+                ? 'border-brand bg-brand/10 text-brand-strong'
                 : 'border-border bg-bg text-muted'
             }`}
           >

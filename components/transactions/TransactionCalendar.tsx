@@ -105,7 +105,7 @@ export default function TransactionCalendar({
                       : 'border-transparent bg-bg'
                 }`}
               >
-                <span className={cell === today ? 'font-bold text-brand' : 'font-medium'}>
+                <span className={cell === today ? 'font-bold text-brand-strong' : 'font-medium'}>
                   {Number(cell.slice(8))}
                 </span>
                 {expense > 0 ? (
@@ -146,7 +146,7 @@ export default function TransactionCalendar({
             <button
               type="button"
               onClick={() => setSelected(null)}
-              className="tap text-xs font-medium text-brand"
+              className="tap text-xs font-medium text-brand-strong"
             >
               Bỏ lọc
             </button>

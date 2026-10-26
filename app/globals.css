@@ -4,39 +4,62 @@
 
 @layer base {
   :root {
-    /* iOS system palette, light. */
-    --c-bg: 242 242 247;
+    /* Sampled from the logo: gold #fdb826, orange #f97606, sky #28b4e8,
+       outline brown #471806, cream #fef3b9. */
+    --c-bg: 255 248 236;
     --c-surface: 255 255 255;
-    --c-border: 209 209 214;
-    --c-fg: 0 0 0;
-    --c-muted: 142 142 147;
-    --c-brand: 0 122 255;
-    --c-income: 21 128 61;
-    --c-expense: 197 34 31;
+    --c-border: 234 219 192;
+    --c-fg: 71 24 6;
+    --c-muted: 122 92 73;
 
-    /* Chart series. Green/red is the money convention but collapses to ΔE 2–5
-       under red-green colour blindness once both sit on a dark surface, so the
-       plotted series use a validated blue/orange pair instead. */
-    --c-series-in: 9 105 218;
-    --c-series-out: 188 76 0;
+    /* Orange is a fill, never type: white on it measures 2.76:1. The logo
+       itself letters in brown over warm fills, and that pairing reaches
+       5.44:1, so brand-ink rides on brand and brand-strong carries brand
+       colour wherever it has to be read as text. */
+    --c-brand: 249 118 6;
+    --c-brand-ink: 71 24 6;
+    --c-brand-strong: 168 74 2;
+    --c-accent: 253 184 38;
+    --c-sky: 40 180 232;
+
+    --c-income: 63 115 32;
+    --c-expense: 184 50 26;
+    /* Ink for a filled income/expense pill. The fills invert between themes —
+       deep in light, bright in dark — so the type on them has to invert too, or
+       dark mode lands at 2.3:1. */
+    --c-on-money: 255 255 255;
+
+    /* Plotted series stay blue/orange: validated at ΔE 21.9 under colour
+       blindness, where any green/red pairing collapses. */
+    --c-series-in: 14 127 184;
+    --c-series-out: 194 87 10;
 
     /* Fixed so page padding can reserve the exact bar height and never shift. */
-    --nav-h: 56px;
+    --nav-h: 58px;
 
     color-scheme: light;
   }
 
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) {
-      /* OLED black: true #000 saves power and matches native iOS dark. */
-      --c-bg: 0 0 0;
-      --c-surface: 28 28 30;
-      --c-border: 44 44 46;
-      --c-fg: 255 255 255;
-      --c-muted: 152 152 157;
-      --c-brand: 10 132 255;
-      --c-income: 48 209 88;
-      --c-expense: 255 69 58;
+      /* Warm near-black rather than pure #000: beside this much orange, a
+         neutral black reads as a hole rather than night. */
+      --c-bg: 26 20 14;
+      --c-surface: 36 28 20;
+      --c-border: 64 51 38;
+      --c-fg: 250 244 235;
+      --c-muted: 168 152 136;
+
+      --c-brand: 251 154 60;
+      --c-brand-ink: 26 20 14;
+      --c-brand-strong: 251 154 60;
+      --c-accent: 253 184 38;
+      --c-sky: 90 200 245;
+
+      --c-income: 124 190 80;
+      --c-expense: 240 112 90;
+      --c-on-money: 26 20 14;
+
       --c-series-in: 31 111 235;
       --c-series-out: 210 105 30;
 
@@ -45,14 +68,19 @@
   }
 
   :root[data-theme='dark'] {
-    --c-bg: 0 0 0;
-    --c-surface: 28 28 30;
-    --c-border: 44 44 46;
-    --c-fg: 255 255 255;
-    --c-muted: 152 152 157;
-    --c-brand: 10 132 255;
-    --c-income: 48 209 88;
-    --c-expense: 255 69 58;
+    --c-bg: 26 20 14;
+    --c-surface: 36 28 20;
+    --c-border: 64 51 38;
+    --c-fg: 250 244 235;
+    --c-muted: 168 152 136;
+    --c-brand: 251 154 60;
+    --c-brand-ink: 26 20 14;
+    --c-brand-strong: 251 154 60;
+    --c-accent: 253 184 38;
+    --c-sky: 90 200 245;
+    --c-income: 124 190 80;
+    --c-expense: 240 112 90;
+    --c-on-money: 26 20 14;
     --c-series-in: 31 111 235;
     --c-series-out: 210 105 30;
 
@@ -84,6 +112,7 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }
@@ -92,6 +121,12 @@
 @layer components {
   .card {
     @apply rounded-card border border-border bg-surface p-4;
+    box-shadow: 0 1px 2px rgb(71 24 6 / 0.04), 0 4px 16px rgb(71 24 6 / 0.04);
+  }
+
+  :root[data-theme='dark'] .card,
+  .dark-card-shadow {
+    box-shadow: none;
   }
 
   .tap {
@@ -100,5 +135,125 @@
 
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ----------------------------------------------------------- splash screen */
+
+/* Set by the head script before paint, for launches that already played it. */
+html[data-splash='seen'] #cagt-splash {
+  display: none;
+}
+
+/*
+ * The splash covers everything, so if JavaScript never hydrates it would trap
+ * the app behind it forever. This retires it on a pure-CSS timer regardless.
+ */
+.splash-failsafe {
+  animation: cagt-failsafe 1ms linear 8s forwards;
+}
+
+@keyframes cagt-failsafe {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+@keyframes cagt-logo-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.72) translateY(18px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.06) translateY(-6px);
+  }
+  78% {
+    transform: scale(0.98) translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes cagt-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+@keyframes cagt-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes cagt-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cagt-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0) scale(0.85);
+    opacity: 0.45;
+  }
+  40% {
+    transform: translateY(-11px) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes cagt-drift {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.8;
+  }
+  85% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-120px) rotate(190deg);
+    opacity: 0;
+  }
+}
+
+@keyframes cagt-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes cagt-fade-out {
+  to {
+    opacity: 0;
+    transform: scale(1.04);
   }
 }

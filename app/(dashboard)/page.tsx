@@ -131,7 +131,7 @@ export default async function DashboardPage() {
 
       <Link
         href="/transactions"
-        className="tap block rounded-xl py-3 text-center text-sm font-medium text-brand"
+        className="tap block rounded-xl py-3 text-center text-sm font-medium text-brand-strong"
       >
         Xem tất cả giao dịch
       </Link>

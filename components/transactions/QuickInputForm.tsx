@@ -165,8 +165,8 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
             className={`tap min-h-[44px] rounded-lg text-sm font-medium ${
               type === option
                 ? option === 'expense'
-                  ? 'bg-expense text-white'
-                  : 'bg-income text-white'
+                  ? 'bg-expense text-on-money'
+                  : 'bg-income text-on-money'
                 : 'text-muted'
             }`}
           >
@@ -204,7 +204,7 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
               aria-pressed={walletId === wallet.id}
               className={`tap min-h-[44px] shrink-0 rounded-xl border px-4 text-sm font-medium ${
                 walletId === wallet.id
-                  ? 'border-brand bg-brand/10 text-brand'
+                  ? 'border-brand bg-brand/10 text-brand-strong'
                   : 'border-border bg-surface text-muted'
               }`}
             >
@@ -232,7 +232,7 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
                     aria-pressed={categoryId === category.id}
                     className={`tap flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl border text-xs ${
                       categoryId === category.id
-                        ? 'border-brand bg-brand/10 text-brand'
+                        ? 'border-brand bg-brand/10 text-brand-strong'
                         : 'border-border bg-surface text-muted'
                     }`}
                   >

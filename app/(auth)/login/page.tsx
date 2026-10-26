@@ -136,7 +136,7 @@ function AuthForm() {
           onClick={() => switchMode('login')}
           aria-pressed={mode === 'login'}
           className={`tap min-h-[44px] rounded-lg text-sm font-medium ${
-            mode === 'login' ? 'bg-brand text-white' : 'text-muted'
+            mode === 'login' ? 'bg-brand text-brand-ink' : 'text-muted'
           }`}
         >
           Đăng nhập
@@ -146,7 +146,7 @@ function AuthForm() {
           onClick={() => switchMode('register')}
           aria-pressed={mode === 'register'}
           className={`tap min-h-[44px] rounded-lg text-sm font-medium ${
-            mode === 'register' ? 'bg-brand text-white' : 'text-muted'
+            mode === 'register' ? 'bg-brand text-brand-ink' : 'text-muted'
           }`}
         >
           Đăng ký
