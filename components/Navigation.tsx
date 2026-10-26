@@ -3,39 +3,127 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+const STROKE = {
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+} as const;
+
+function IconOverview() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className="h-6 w-6" {...STROKE}>
+      <path d="M4 19V11M9.5 19V5M15 19v-6M20.5 19V8" />
+    </svg>
+  );
+}
+
+function IconTransactions() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className="h-6 w-6" {...STROKE}>
+      <path d="M6 3h12a1 1 0 0 1 1 1v17l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V4a1 1 0 0 1 1-1Z" />
+      <path d="M9 8h6M9 12h6" />
+    </svg>
+  );
+}
+
+function IconWallet() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className="h-6 w-6" {...STROKE}>
+      <path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+      <path d="M16 11h3a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-3a2 2 0 0 1 0-4Z" />
+    </svg>
+  );
+}
+
+function IconSettings() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className="h-6 w-6" {...STROKE}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6M18.7 18.7l-1.6-1.6M6.9 6.9 5.3 5.3" />
+    </svg>
+  );
+}
+
 const TABS = [
-  { href: '/', label: 'Tổng quan', icon: '📊' },
-  { href: '/transactions', label: 'Giao dịch', icon: '🧾' },
-  { href: '/wallets', label: 'Ví', icon: '👛' },
-  { href: '/settings', label: 'Cài đặt', icon: '⚙️' },
+  { href: '/', label: 'Tổng quan', Icon: IconOverview },
+  { href: '/transactions', label: 'Giao dịch', Icon: IconTransactions },
+  { href: '/wallets', label: 'Ví & Quỹ', Icon: IconWallet },
+  { href: '/settings', label: 'Cài đặt', Icon: IconSettings },
 ] as const;
 
 export default function Navigation() {
   const pathname = usePathname();
+  const addActive = pathname.startsWith('/transactions/add');
+
+  function isActive(href: string) {
+    if (href === '/') return pathname === '/';
+    if (href === '/transactions') return pathname === '/transactions';
+    return pathname.startsWith(href);
+  }
+
+  const [first, second, third, fourth] = TABS;
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur pb-safe-b">
-      <ul className="mx-auto flex max-w-md">
-        {TABS.map((tab) => {
-          const active = tab.href === '/' ? pathname === '/' : pathname.startsWith(tab.href);
-          return (
-            <li key={tab.href} className="flex-1">
-              <Link
-                href={tab.href}
-                aria-current={active ? 'page' : undefined}
-                className={`tap flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${
-                  active ? 'text-brand' : 'text-muted'
-                }`}
-              >
-                <span aria-hidden className="text-xl leading-none">
-                  {tab.icon}
-                </span>
-                {tab.label}
-              </Link>
-            </li>
-          );
-        })}
+    <nav
+      aria-label="Điều hướng chính"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/90 backdrop-blur-xl"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      <ul className="mx-auto flex max-w-md items-stretch" style={{ height: 'var(--nav-h)' }}>
+        <Tab {...first} active={isActive(first.href)} />
+        <Tab {...second} active={isActive(second.href)} />
+
+        <li className="flex-1">
+          <Link
+            href="/transactions/add"
+            aria-label="Nhập nhanh giao dịch"
+            aria-current={addActive ? 'page' : undefined}
+            className="tap flex h-full flex-col items-center justify-center gap-1"
+          >
+            <span
+              className={`-mt-6 flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg ring-4 ring-surface ${
+                addActive ? 'bg-brand/80' : 'bg-brand'
+              }`}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden className="h-7 w-7" {...STROKE} strokeWidth={2.2}>
+                <path d="M12 5.5v13M5.5 12h13" />
+              </svg>
+            </span>
+            <span className={`text-[10px] font-medium ${addActive ? 'text-brand' : 'text-muted'}`}>
+              Nhập nhanh
+            </span>
+          </Link>
+        </li>
+
+        <Tab {...third} active={isActive(third.href)} />
+        <Tab {...fourth} active={isActive(fourth.href)} />
       </ul>
     </nav>
+  );
+}
+
+interface TabProps {
+  href: string;
+  label: string;
+  Icon: () => React.JSX.Element;
+  active: boolean;
+}
+
+function Tab({ href, label, Icon, active }: TabProps) {
+  return (
+    <li className="flex-1">
+      <Link
+        href={href}
+        aria-current={active ? 'page' : undefined}
+        className={`tap flex h-full flex-col items-center justify-center gap-0.5 ${
+          active ? 'text-brand' : 'text-muted'
+        }`}
+      >
+        <Icon />
+        <span className="text-[10px] font-medium">{label}</span>
+      </Link>
+    </li>
   );
 }

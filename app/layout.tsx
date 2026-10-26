@@ -34,8 +34,8 @@ export const viewport: Viewport = {
   // Lets the layout paint under the notch and home indicator.
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f6f7f9' },
-    { media: '(prefers-color-scheme: dark)', color: '#0e1013' },
+    { media: '(prefers-color-scheme: light)', color: '#f2f2f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#000000' },
   ],
 };
 

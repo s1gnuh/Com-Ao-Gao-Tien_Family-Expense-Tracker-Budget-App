@@ -4,42 +4,55 @@
 
 @layer base {
   :root {
-    --c-bg: 246 247 249;
+    /* iOS system palette, light. */
+    --c-bg: 242 242 247;
     --c-surface: 255 255 255;
-    --c-border: 226 229 234;
-    --c-fg: 23 25 29;
-    --c-muted: 113 119 128;
-    --c-brand: 22 119 189;
-    --c-income: 21 128 61;
-    --c-expense: 190 42 42;
+    --c-border: 209 209 214;
+    --c-fg: 0 0 0;
+    --c-muted: 142 142 147;
+    --c-brand: 0 122 255;
+    --c-income: 52 199 89;
+    --c-expense: 255 59 48;
+
+    /* Fixed so page padding can reserve the exact bar height and never shift. */
+    --nav-h: 56px;
+
+    color-scheme: light;
   }
 
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) {
-      --c-bg: 14 16 19;
-      --c-surface: 26 29 34;
-      --c-border: 46 51 58;
-      --c-fg: 240 242 245;
-      --c-muted: 150 157 167;
-      --c-brand: 96 180 250;
-      --c-income: 74 201 126;
-      --c-expense: 255 123 123;
+      /* OLED black: true #000 saves power and matches native iOS dark. */
+      --c-bg: 0 0 0;
+      --c-surface: 28 28 30;
+      --c-border: 44 44 46;
+      --c-fg: 255 255 255;
+      --c-muted: 152 152 157;
+      --c-brand: 10 132 255;
+      --c-income: 48 209 88;
+      --c-expense: 255 69 58;
+
+      color-scheme: dark;
     }
   }
 
   :root[data-theme='dark'] {
-    --c-bg: 14 16 19;
-    --c-surface: 26 29 34;
-    --c-border: 46 51 58;
-    --c-fg: 240 242 245;
-    --c-muted: 150 157 167;
-    --c-brand: 96 180 250;
-    --c-income: 74 201 126;
-    --c-expense: 255 123 123;
+    --c-bg: 0 0 0;
+    --c-surface: 28 28 30;
+    --c-border: 44 44 46;
+    --c-fg: 255 255 255;
+    --c-muted: 152 152 157;
+    --c-brand: 10 132 255;
+    --c-income: 48 209 88;
+    --c-expense: 255 69 58;
+
+    color-scheme: dark;
   }
 
   html {
-    /* Stops the whole PWA shell from rubber-banding away from the status bar. */
+    /* Painted before React mounts, so the rubber-band area past the top or
+       bottom of the page never flashes white on a dark theme. */
+    background-color: rgb(var(--c-bg));
     overscroll-behavior-y: none;
     -webkit-text-size-adjust: 100%;
   }
@@ -54,6 +67,15 @@
   select,
   textarea {
     font-size: 16px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
