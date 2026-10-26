@@ -1,6 +1,6 @@
 import type { ParsedReceipt } from '@/types';
 
-const MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+const MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.1-flash-lite';
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const SYSTEM_PROMPT = `Bạn là trình bóc tách hoá đơn tiếng Việt. Đọc ảnh hoá đơn hoặc mã QR chuyển khoản và trả về JSON.
@@ -41,36 +41,48 @@ export async function parseReceiptImage(base64Image: string, mimeType: string): 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new GeminiError('GEMINI_API_KEY chưa được cấu hình.', 500);
 
-  const response = await fetch(`${ENDPOINT}/${MODEL}:generateContent`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { inlineData: { mimeType, data: base64Image } },
-            { text: 'Bóc tách hoá đơn này.' },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
+  let response: Response;
+  try {
+    response = await fetch(`${ENDPOINT}/${MODEL}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
       },
-    }),
-  });
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType, data: base64Image } },
+              { text: 'Bóc tách hoá đơn này.' },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
+        },
+      }),
+      // Gemini occasionally hangs instead of erroring; fail well before
+      // Vercel's function timeout so the UI gets a readable message.
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    throw new GeminiError('Gemini phản hồi quá lâu, vui lòng thử lại hoặc nhập tay.', 504);
+  }
 
   if (!response.ok) {
-    const detail = await response.text();
     // 429 means the free-tier quota is spent; the UI falls back to manual entry.
+    // 503 means the model is overloaded — same fallback, different reason.
     throw new GeminiError(
-      response.status === 429 ? 'Đã hết lượt AI miễn phí, vui lòng nhập tay.' : 'Gemini từ chối yêu cầu.',
+      response.status === 429
+        ? 'Đã hết lượt AI miễn phí, vui lòng nhập tay.'
+        : response.status === 503
+          ? 'Gemini đang quá tải, vui lòng thử lại hoặc nhập tay.'
+          : 'Gemini từ chối yêu cầu.',
       response.status === 429 ? 429 : 502,
     );
   }
