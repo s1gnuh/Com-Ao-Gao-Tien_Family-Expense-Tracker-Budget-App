@@ -255,7 +255,12 @@ create policy bills_delete on public.recurring_bills
 -- the client would mean shipping the whole history to the phone on each load.
 -- security_invoker keeps the caller's RLS in force, so this exposes no wallet
 -- the caller could not already read.
-create or replace view public.wallet_balances
+-- Dropped first rather than CREATE OR REPLACE: that form can only append
+-- columns, so inserting is_archived ahead of balance reads to Postgres as
+-- renaming the fifth column and is rejected.
+drop view if exists public.wallet_balances;
+
+create view public.wallet_balances
 with (security_invoker = true) as
 select
   w.id as wallet_id,
