@@ -30,7 +30,13 @@ export async function middleware(request: NextRequest) {
   );
 
   const { data } = await supabase.auth.getUser();
-  const isPublic = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path));
+  const { pathname } = request.nextUrl;
+
+  // Route handlers answer with JSON; redirecting them to /login would hand
+  // fetch() an HTML page. They enforce auth themselves.
+  if (pathname.startsWith('/api/')) return response;
+
+  const isPublic = PUBLIC_PATHS.some((path) => pathname.startsWith(path));
 
   if (!data.user && !isPublic) {
     const redirect = request.nextUrl.clone();
@@ -39,7 +45,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirect);
   }
 
-  if (data.user && request.nextUrl.pathname === '/login') {
+  if (data.user && pathname === '/login') {
     const redirect = request.nextUrl.clone();
     redirect.pathname = '/';
     redirect.search = '';
