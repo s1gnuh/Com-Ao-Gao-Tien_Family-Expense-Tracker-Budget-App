@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --c-bg: 246 247 249;
+    --c-surface: 255 255 255;
+    --c-border: 226 229 234;
+    --c-fg: 23 25 29;
+    --c-muted: 113 119 128;
+    --c-brand: 22 119 189;
+    --c-income: 21 128 61;
+    --c-expense: 190 42 42;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --c-bg: 14 16 19;
+      --c-surface: 26 29 34;
+      --c-border: 46 51 58;
+      --c-fg: 240 242 245;
+      --c-muted: 150 157 167;
+      --c-brand: 96 180 250;
+      --c-income: 74 201 126;
+      --c-expense: 255 123 123;
+    }
+  }
+
+  :root[data-theme='dark'] {
+    --c-bg: 14 16 19;
+    --c-surface: 26 29 34;
+    --c-border: 46 51 58;
+    --c-fg: 240 242 245;
+    --c-muted: 150 157 167;
+    --c-brand: 96 180 250;
+    --c-income: 74 201 126;
+    --c-expense: 255 123 123;
+  }
+
+  html {
+    /* Stops the whole PWA shell from rubber-banding away from the status bar. */
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* iOS Safari zooms the viewport on focus for any font-size under 16px. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-card border border-border bg-surface p-4;
+  }
+
+  .tap {
+    @apply transition-transform duration-100 active:scale-95;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
