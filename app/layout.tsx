@@ -12,7 +12,10 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'Cơm Áo Gạo Tiền',
-    statusBarStyle: 'black-translucent',
+    // 'black-translucent' draws the clock and battery in white over the page,
+    // which disappears against a white app. 'default' gives dark glyphs on the
+    // theme colour instead.
+    statusBarStyle: 'default',
   },
   formatDetection: {
     telephone: false,
@@ -33,10 +36,9 @@ export const viewport: Viewport = {
   userScalable: false,
   // Lets the layout paint under the notch and home indicator.
   viewportFit: 'cover',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#FFF8EC' },
-    { media: '(prefers-color-scheme: dark)', color: '#1A140E' },
-  ],
+  // One value, not a per-scheme pair: the app is light only, so the iOS status
+  // bar should stay on the logo's warm white whatever the phone is set to.
+  themeColor: '#FEFCF5',
 };
 
 /**

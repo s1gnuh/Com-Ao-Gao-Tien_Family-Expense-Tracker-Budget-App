@@ -4,9 +4,15 @@
 
 @layer base {
   :root {
-    /* Sampled from the logo: gold #fdb826, orange #f97606, sky #28b4e8,
-       outline brown #471806, cream #fef3b9. */
-    --c-bg: 255 248 236;
+    /*
+     * Sampled from the logo file: its backdrop is #fefcf5 across 39% of the
+     * image, so the app sits on the same warm white and the splash artwork
+     * meets the page without a seam.
+     *
+     * Light only, deliberately. A dark theme beside this much orange reads as
+     * gloom, and the brand is sunlit.
+     */
+    --c-bg: 254 252 245;
     --c-surface: 255 255 255;
     --c-border: 234 219 192;
     --c-fg: 71 24 6;
@@ -24,9 +30,8 @@
 
     --c-income: 63 115 32;
     --c-expense: 184 50 26;
-    /* Ink for a filled income/expense pill. The fills invert between themes —
-       deep in light, bright in dark — so the type on them has to invert too, or
-       dark mode lands at 2.3:1. */
+    /* Ink for a filled income/expense pill — both fills are deep enough that
+       white clears AA on them. */
     --c-on-money: 255 255 255;
 
     /* Plotted series stay blue/orange: validated at ΔE 21.9 under colour
@@ -40,56 +45,9 @@
     color-scheme: light;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']) {
-      /* Warm near-black rather than pure #000: beside this much orange, a
-         neutral black reads as a hole rather than night. */
-      --c-bg: 26 20 14;
-      --c-surface: 36 28 20;
-      --c-border: 64 51 38;
-      --c-fg: 250 244 235;
-      --c-muted: 168 152 136;
-
-      --c-brand: 251 154 60;
-      --c-brand-ink: 26 20 14;
-      --c-brand-strong: 251 154 60;
-      --c-accent: 253 184 38;
-      --c-sky: 90 200 245;
-
-      --c-income: 124 190 80;
-      --c-expense: 240 112 90;
-      --c-on-money: 26 20 14;
-
-      --c-series-in: 31 111 235;
-      --c-series-out: 210 105 30;
-
-      color-scheme: dark;
-    }
-  }
-
-  :root[data-theme='dark'] {
-    --c-bg: 26 20 14;
-    --c-surface: 36 28 20;
-    --c-border: 64 51 38;
-    --c-fg: 250 244 235;
-    --c-muted: 168 152 136;
-    --c-brand: 251 154 60;
-    --c-brand-ink: 26 20 14;
-    --c-brand-strong: 251 154 60;
-    --c-accent: 253 184 38;
-    --c-sky: 90 200 245;
-    --c-income: 124 190 80;
-    --c-expense: 240 112 90;
-    --c-on-money: 26 20 14;
-    --c-series-in: 31 111 235;
-    --c-series-out: 210 105 30;
-
-    color-scheme: dark;
-  }
-
   html {
     /* Painted before React mounts, so the rubber-band area past the top or
-       bottom of the page never flashes white on a dark theme. */
+       bottom of the page never flashes a different colour. */
     background-color: rgb(var(--c-bg));
     overscroll-behavior-y: none;
     -webkit-text-size-adjust: 100%;
@@ -121,12 +79,9 @@
 @layer components {
   .card {
     @apply rounded-card border border-border bg-surface p-4;
-    box-shadow: 0 1px 2px rgb(71 24 6 / 0.04), 0 4px 16px rgb(71 24 6 / 0.04);
-  }
-
-  :root[data-theme='dark'] .card,
-  .dark-card-shadow {
-    box-shadow: none;
+    /* White on warm white is a 1.03 ratio, so the card is defined by its edge
+       and lift rather than by its fill. */
+    box-shadow: 0 1px 2px rgb(71 24 6 / 0.05), 0 6px 20px rgb(71 24 6 / 0.06);
   }
 
   .tap {
@@ -192,11 +147,11 @@ html[data-splash='seen'] #cagt-splash {
 @keyframes cagt-glow {
   0%,
   100% {
-    opacity: 0.35;
+    opacity: 0.3;
     transform: scale(0.92);
   }
   50% {
-    opacity: 0.65;
+    opacity: 0.55;
     transform: scale(1.08);
   }
 }
@@ -231,10 +186,10 @@ html[data-splash='seen'] #cagt-splash {
     opacity: 0;
   }
   15% {
-    opacity: 0.8;
+    opacity: 0.7;
   }
   85% {
-    opacity: 0.8;
+    opacity: 0.7;
   }
   100% {
     transform: translateY(-120px) rotate(190deg);
