@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Toast from '@/components/ui/Toast';
 import { downscaleImage } from '@/lib/image';
 import { formatVND, parseAmountInput, toDateInput } from '@/lib/formatters';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
@@ -30,7 +31,9 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
 
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const [aiMessage, setAiMessage] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [toast, setToast] = useState<{ title: string; description: string } | null>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const albumRef = useRef<HTMLInputElement>(null);
 
   const amount = parseAmountInput(amountRaw);
   const grouped = useMemo(
@@ -42,6 +45,16 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
   );
 
   async function handleReceipt(file: File) {
+    // "Choose File" in the iOS sheet can hand back a PDF or anything else, so
+    // reject it here rather than spending a Gemini call to find out.
+    if (!file.type.startsWith('image/')) {
+      setToast({
+        title: 'Ảnh không đúng định dạng',
+        description: 'Chỉ nhận ảnh JPG, PNG hoặc HEIC. Chọn lại giúp mình nhé.',
+      });
+      return;
+    }
+
     setAiStatus('working');
     setAiMessage(null);
 
@@ -67,9 +80,16 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
   }
 
   function applyParsed(parsed: ParsedReceipt) {
+    // The model reports a null amount when the picture is not a receipt at all,
+    // which is worth interrupting for — an inline note under the button is easy
+    // to miss after the wait.
     if (parsed.amount === null) {
-      setAiStatus('error');
-      setAiMessage('Không tìm thấy số tiền trong ảnh, nhập tay giúp mình.');
+      setAiStatus('idle');
+      setAiMessage(null);
+      setToast({
+        title: 'Ảnh không đúng định dạng',
+        description: 'Không đọc được hoá đơn trong ảnh này. Chọn ảnh hoá đơn rõ nét, hoặc nhập tay.',
+      });
       return;
     }
 
@@ -224,8 +244,11 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
           <p className="text-xs text-muted">AI đọc số tiền, nội dung và ngày giúp bạn.</p>
         </div>
 
+        {/* Two inputs rather than one: `capture` opens the camera directly, and
+            iOS drops the photo-library option from the sheet whenever it is set,
+            so an album pick needs an input without it. */}
         <input
-          ref={fileRef}
+          ref={cameraRef}
           type="file"
           accept="image/*"
           capture="environment"
@@ -236,16 +259,42 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
             event.target.value = '';
           }}
         />
+        <input
+          ref={albumRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void handleReceipt(file);
+            event.target.value = '';
+          }}
+        />
 
-        <Button
-          type="button"
-          variant="secondary"
-          full
-          disabled={aiStatus === 'working'}
-          onClick={() => fileRef.current?.click()}
-        >
-          {aiStatus === 'working' ? 'Đang đọc hoá đơn…' : '📷 Chọn ảnh hoá đơn'}
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={aiStatus === 'working'}
+            onClick={() => cameraRef.current?.click()}
+          >
+            📷 Chụp mới
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={aiStatus === 'working'}
+            onClick={() => albumRef.current?.click()}
+          >
+            🖼️ Chọn từ album
+          </Button>
+        </div>
+
+        {aiStatus === 'working' && (
+          <p role="status" className="text-center text-xs text-muted">
+            Đang đọc hoá đơn…
+          </p>
+        )}
 
         {aiMessage && (
           <p
@@ -266,6 +315,10 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
       <Button type="submit" full disabled={submitting || amount === null}>
         {submitting ? 'Đang lưu…' : 'Lưu giao dịch'}
       </Button>
+
+      {toast && (
+        <Toast title={toast.title} description={toast.description} onClose={() => setToast(null)} />
+      )}
     </form>
   );
 }
