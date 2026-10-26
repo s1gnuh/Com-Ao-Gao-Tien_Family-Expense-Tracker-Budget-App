@@ -206,6 +206,26 @@ html[data-splash='seen'] #cagt-splash {
   }
 }
 
+@keyframes cagt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes cagt-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  60% {
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes cagt-fade-out {
   to {
     opacity: 0;

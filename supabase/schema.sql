@@ -70,6 +70,32 @@ create index if not exists transactions_author_idx on public.transactions (creat
 create index if not exists transactions_receipt_hash_idx on public.transactions (receipt_hash)
   where receipt_hash is not null;
 
+-- Hiding a wallet rather than deleting it: transactions cascade from wallets,
+-- so a delete would take the household's history with it.
+alter table public.wallets add column if not exists is_archived boolean not null default false;
+
+do $$ begin create type bill_cycle as enum ('monthly', 'quarterly', 'yearly'); exception when duplicate_object then null; end $$;
+
+create table if not exists public.recurring_bills (
+  id uuid primary key default gen_random_uuid(),
+  wallet_id uuid not null references public.wallets (id) on delete cascade,
+  category_id uuid references public.categories (id) on delete set null,
+  name text not null,
+  amount numeric(14, 2) not null check (amount > 0),
+  cycle bill_cycle not null default 'monthly',
+  -- Day of month it falls due. 29-31 lands on the last day of shorter months.
+  due_day int not null default 1 check (due_day between 1 and 31),
+  -- Anchor month for quarterly and yearly cycles; ignored when monthly.
+  due_month int check (due_month between 1 and 12),
+  assignee_id uuid references public.profiles (id) on delete set null,
+  last_paid_on date,
+  is_active boolean not null default true,
+  created_by uuid not null references public.profiles (id) on delete restrict,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists bills_wallet_idx on public.recurring_bills (wallet_id);
+
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
   wallet_id uuid not null references public.wallets (id) on delete cascade,
@@ -148,13 +174,19 @@ drop policy if exists wallets_insert_own on public.wallets;
 create policy wallets_insert_own on public.wallets
   for insert to authenticated with check (type = 'personal' and owner_id = auth.uid());
 
+-- The family fund belongs to all four, so any member may rename or archive it;
+-- a personal wallet stays with its owner.
 drop policy if exists wallets_update_own on public.wallets;
 create policy wallets_update_own on public.wallets
-  for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for update to authenticated
+  using (owner_id = auth.uid() or type = 'shared')
+  with check (owner_id = auth.uid() or type = 'shared');
 
+-- Shared stays undeletable: one fund exists by design, and deleting a wallet
+-- cascades its transactions.
 drop policy if exists wallets_delete_own on public.wallets;
 create policy wallets_delete_own on public.wallets
-  for delete to authenticated using (owner_id = auth.uid());
+  for delete to authenticated using (owner_id = auth.uid() and type = 'personal');
 
 -- Categories are a shared vocabulary for the household.
 drop policy if exists categories_select on public.categories;
@@ -195,6 +227,28 @@ create policy budgets_write on public.budgets
   for all to authenticated
   using (public.can_access_wallet(wallet_id)) with check (public.can_access_wallet(wallet_id));
 
+-- Recurring bills follow wallet access: the household manages the shared fund's
+-- bills together, and a personal wallet's bills stay with its owner.
+alter table public.recurring_bills enable row level security;
+
+drop policy if exists bills_select on public.recurring_bills;
+create policy bills_select on public.recurring_bills
+  for select to authenticated using (public.can_access_wallet(wallet_id));
+
+drop policy if exists bills_insert on public.recurring_bills;
+create policy bills_insert on public.recurring_bills
+  for insert to authenticated
+  with check (public.can_access_wallet(wallet_id) and created_by = auth.uid());
+
+drop policy if exists bills_update on public.recurring_bills;
+create policy bills_update on public.recurring_bills
+  for update to authenticated
+  using (public.can_access_wallet(wallet_id)) with check (public.can_access_wallet(wallet_id));
+
+drop policy if exists bills_delete on public.recurring_bills;
+create policy bills_delete on public.recurring_bills
+  for delete to authenticated using (public.can_access_wallet(wallet_id));
+
 -- ---------------------------------------------------------------- views
 
 -- Balance is a sum over every transaction a wallet ever had, so computing it in
@@ -208,10 +262,11 @@ select
   w.name,
   w.type,
   w.owner_id,
+  w.is_archived,
   coalesce(sum(case when t.type = 'income' then t.amount else -t.amount end), 0)::numeric(14, 2) as balance
 from public.wallets w
 left join public.transactions t on t.wallet_id = w.id
-group by w.id, w.name, w.type, w.owner_id;
+group by w.id, w.name, w.type, w.owner_id, w.is_archived;
 
 -- ------------------------------------------------------- reporting functions
 
@@ -294,12 +349,16 @@ $$;
 
 alter table public.transactions replica identity full;
 alter table public.budgets replica identity full;
+alter table public.recurring_bills replica identity full;
 do $$ begin
   alter publication supabase_realtime add table public.transactions;
 exception when duplicate_object then null; end $$;
-do $$ begin
+do $ begin
   alter publication supabase_realtime add table public.budgets;
-exception when duplicate_object then null; end $$;
+exception when duplicate_object then null; end $;
+do $ begin
+  alter publication supabase_realtime add table public.recurring_bills;
+exception when duplicate_object then null; end $;
 
 -- ---------------------------------------------------------------- seed
 

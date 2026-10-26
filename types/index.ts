@@ -43,6 +43,35 @@ export interface Transaction {
   created_at: string;
 }
 
+export type BillCycle = 'monthly' | 'quarterly' | 'yearly';
+
+export interface RecurringBill {
+  id: string;
+  wallet_id: string;
+  category_id: string | null;
+  name: string;
+  amount: number;
+  cycle: BillCycle;
+  due_day: number;
+  due_month: number | null;
+  assignee_id: string | null;
+  last_paid_on: string | null;
+  is_active: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+export type BillStatus = 'paid' | 'overdue' | 'due_soon' | 'upcoming';
+
+export interface BillWithStatus {
+  bill: RecurringBill;
+  status: BillStatus;
+  /** Date the current cycle falls due, as YYYY-MM-DD. */
+  dueOn: string;
+  /** Negative once overdue. */
+  daysLeft: number;
+}
+
 export interface Budget {
   id: string;
   wallet_id: string;

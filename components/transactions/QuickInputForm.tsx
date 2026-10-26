@@ -3,7 +3,7 @@
 import { useActionState, useMemo, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Toast from '@/components/ui/Toast';
+import Toast, { type ToastTone } from '@/components/ui/Toast';
 import { downscaleImage, hashImage } from '@/lib/image';
 import { formatDate, formatVND, parseAmountInput, toDateInput } from '@/lib/formatters';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
@@ -65,7 +65,12 @@ export default function QuickInputForm({
 
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const [aiMessage, setAiMessage] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ title: string; description: string } | null>(null);
+  const [toast, setToast] = useState<{
+    title: string;
+    description: string;
+    note?: string;
+    tone?: ToastTone;
+  } | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const albumRef = useRef<HTMLInputElement>(null);
 
@@ -154,12 +159,25 @@ export default function QuickInputForm({
     const matched = matchCategory(parsed.category_guess, categories);
     if (matched) setCategoryId(matched.id);
 
+    const unsure = parsed.confidence < 0.6;
+    const kind = parsed.type === 'income' ? 'khoản thu' : 'khoản chi';
+
     setAiStatus('done');
+    // The inline line stays put while the form is reviewed; the toast is what
+    // announces the fields changed under the reader's hands.
     setAiMessage(
-      parsed.confidence < 0.6
-        ? 'AI không chắc lắm — kiểm tra lại số tiền trước khi lưu.'
-        : `AI đã điền sẵn khoản ${parsed.type === 'income' ? 'thu' : 'chi'}, xem lại rồi lưu nhé.`,
+      unsure
+        ? 'AI không chắc lắm — soát kỹ số tiền trước khi lưu.'
+        : `AI đã điền sẵn ${kind}. Kiểm tra lại một lượt rồi lưu nhé.`,
     );
+    setToast({
+      tone: unsure ? 'info' : 'success',
+      title: unsure ? 'Đã điền, nhưng chưa chắc' : 'AI điền xong rồi!',
+      description: unsure
+        ? `Ảnh hơi khó đọc nên AI không chắc về số tiền của ${kind} này.`
+        : `Đã điền số tiền, nội dung, ngày và danh mục cho ${kind} này.`,
+      note: 'Kéo xuống kiểm tra lại một lần trước khi lưu nhé!',
+    });
   }
 
   if (wallets.length === 0) {
@@ -232,7 +250,7 @@ export default function QuickInputForm({
             disabled={aiStatus === 'working'}
             onClick={() => albumRef.current?.click()}
           >
-            🖼️ Chọn từ album
+            🖼️ Từ album
           </Button>
         </div>
 
@@ -379,7 +397,13 @@ export default function QuickInputForm({
       {footer}
 
       {toast && (
-        <Toast title={toast.title} description={toast.description} onClose={() => setToast(null)} />
+        <Toast
+          title={toast.title}
+          description={toast.description}
+          note={toast.note}
+          tone={toast.tone}
+          onClose={() => setToast(null)}
+        />
       )}
     </form>
   );

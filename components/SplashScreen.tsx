@@ -94,13 +94,15 @@ export default function SplashScreen() {
           : undefined
       }
     >
+      {/* Tint only the bottom. The logo file carries its own #fefcf5 backdrop,
+          so any wash behind it turns those baked-in margins into a visible
+          pale rectangle. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5"
         style={{
           background:
-            'radial-gradient(120% 70% at 50% 15%, rgb(var(--c-sky) / 0.18), transparent 60%),' +
-            'radial-gradient(90% 55% at 50% 100%, rgb(var(--c-accent) / 0.22), transparent 65%)',
+            'radial-gradient(120% 100% at 50% 100%, rgb(var(--c-accent) / 0.2), transparent 70%)',
         }}
       />
 
@@ -122,15 +124,6 @@ export default function SplashScreen() {
 
       <div className="relative flex flex-col items-center px-8">
         <div
-          aria-hidden
-          className="absolute h-56 w-56 rounded-full blur-2xl"
-          style={{
-            background: 'rgb(var(--c-accent) / 0.45)',
-            animation: 'cagt-glow 2.6s ease-in-out infinite',
-          }}
-        />
-
-        <div
           className="relative"
           style={{ animation: 'cagt-logo-in 900ms cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
         >
@@ -142,7 +135,7 @@ export default function SplashScreen() {
               height={418}
               priority
               sizes="(max-width: 480px) 80vw, 340px"
-              className="h-auto w-[min(80vw,340px)] drop-shadow-xl"
+              className="h-auto w-[min(82vw,352px)]"
             />
           </div>
         </div>

@@ -2,9 +2,11 @@ import Image from 'next/image';
 import Link from 'next/link';
 import BalanceCard from '@/components/dashboard/BalanceCard';
 import CashFlowChart, { type CashFlowPoint } from '@/components/dashboard/CashFlowChart';
+import RefreshButton from '@/components/ui/RefreshButton';
 import { createClient } from '@/lib/supabase/server';
+import { describeBill, sortBills } from '@/lib/bills';
 import { formatMonth, formatVND } from '@/lib/formatters';
-import type { Wallet } from '@/types';
+import type { RecurringBill, Wallet } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,10 +44,11 @@ export default async function DashboardPage() {
   const supabase = await createClient();
   const now = new Date();
 
-  const [balancesResult, cashflowResult] = await Promise.all([
+  const [balancesResult, cashflowResult, billsResult] = await Promise.all([
     supabase.from('wallet_balances').select('wallet_id,name,type,owner_id,balance'),
     // Aggregated in Postgres: six rows back instead of six months of transactions.
     supabase.rpc('monthly_cashflow', { p_months: 6 }),
+    supabase.from('recurring_bills').select('*').eq('is_active', true),
   ]);
 
   const missing =
@@ -88,6 +91,11 @@ export default async function DashboardPage() {
   const totalBalance = balances.reduce((sum, row) => sum + Number(row.balance), 0);
   const chartData: CashFlowPoint[] = slots.map(({ label, thu, chi }) => ({ label, thu, chi }));
 
+  // A missing recurring_bills table just means the badge stays quiet.
+  const pendingBills = sortBills(
+    ((billsResult.data ?? []) as RecurringBill[]).map((bill) => describeBill(bill)),
+  ).filter((entry) => entry.status === 'overdue' || entry.status === 'due_soon');
+
   return (
     <div className="space-y-4 py-4">
       <header className="flex items-center gap-3">
@@ -103,11 +111,39 @@ export default async function DashboardPage() {
           sizes="96px"
           className="h-12 w-auto shrink-0"
         />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm capitalize text-muted">{formatMonth(now)}</p>
           <h1 className="text-2xl font-semibold leading-tight">Tổng quan</h1>
         </div>
+        <RefreshButton />
       </header>
+
+      {pendingBills.length > 0 && (
+        <Link
+          href="/bills"
+          className="tap flex items-center gap-3 rounded-card border border-expense/30 bg-expense/10 p-4"
+        >
+          <span aria-hidden className="text-xl">
+            🔔
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-expense">
+              {pendingBills.length} hoá đơn cần lo sớm
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-muted">
+              Gần nhất: {pendingBills[0]!.bill.name} ·{' '}
+              {pendingBills[0]!.status === 'overdue'
+                ? `quá hạn ${Math.abs(pendingBills[0]!.daysLeft)} ngày`
+                : pendingBills[0]!.daysLeft === 0
+                  ? 'đến hạn hôm nay'
+                  : `còn ${pendingBills[0]!.daysLeft} ngày`}
+            </span>
+          </span>
+          <span aria-hidden className="shrink-0 text-expense">
+            ›
+          </span>
+        </Link>
+      )}
 
       <BalanceCard
         balance={totalBalance}
