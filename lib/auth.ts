@@ -17,6 +17,51 @@ export function usernameToEmail(username: string): string {
   return `${normalizeUsername(username)}@${ACCOUNT_DOMAIN}`;
 }
 
+const AUTH_COOKIE_PREFIX = 'sb-';
+const AUTH_COOKIE_SUFFIX = '-auth-token';
+
+export interface StoredSession {
+  expires_at?: number;
+  user?: { id?: string; email?: string };
+}
+
+function decodeBase64(value: string): string {
+  const binary = atob(value);
+  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+}
+
+/**
+ * Reassembles the Supabase session from cookies without contacting the auth
+ * server. @supabase/ssr splits long sessions across `name.0`, `name.1`, so the
+ * parts are rejoined in name order.
+ *
+ * The contents are NOT verified. Use this only where the value merely selects
+ * which rows to ask for — Supabase revalidates the token on every query, so a
+ * forged cookie returns no data. Auth gates and writes must use the server's
+ * getUser() instead.
+ */
+export function readStoredSession(
+  cookies: { name: string; value: string }[],
+): StoredSession | null {
+  const parts = cookies
+    .filter(
+      ({ name }) => name.startsWith(AUTH_COOKIE_PREFIX) && name.includes(AUTH_COOKIE_SUFFIX),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(({ value }) => value);
+
+  if (parts.length === 0) return null;
+
+  let raw = parts.join('');
+  if (raw.startsWith('base64-')) raw = raw.slice('base64-'.length);
+
+  try {
+    return JSON.parse(decodeBase64(raw)) as StoredSession;
+  } catch {
+    return null;
+  }
+}
+
 /** Returns a Vietnamese problem description, or null when the name is usable. */
 export function validateUsername(raw: string): string | null {
   const username = normalizeUsername(raw);

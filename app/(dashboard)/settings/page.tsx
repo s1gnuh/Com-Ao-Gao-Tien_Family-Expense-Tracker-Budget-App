@@ -1,7 +1,7 @@
 import BudgetForm, { type BudgetRow } from '@/components/settings/BudgetForm';
 import ProfileForm from '@/components/settings/ProfileForm';
 import { signOutAction } from './actions';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, readSessionFast } from '@/lib/supabase/server';
 import { monthRange } from '@/lib/formatters';
 import type { Budget, Category, Profile, Wallet } from '@/types';
 
@@ -10,12 +10,15 @@ export const metadata = { title: 'Cài đặt' };
 
 export default async function SettingsPage() {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
+  // Reading identity from the cookie keeps all five queries in one round trip;
+  // getUser() would serialise a 300-400ms call ahead of them. Nothing here is
+  // gated on it — RLS decides what each query may return.
+  const session = await readSessionFast();
   const { from, to } = monthRange();
 
   const [profileResult, walletsResult, categoriesResult, budgetsResult, spendResult] =
     await Promise.all([
-      supabase.from('profiles').select('*').eq('id', auth.user?.id ?? '').maybeSingle(),
+      supabase.from('profiles').select('*').eq('id', session.id ?? '').maybeSingle(),
       supabase.from('wallets').select('id,name,type').order('type').order('name'),
       supabase.from('categories').select('*').order('kind').order('name'),
       supabase.from('budgets').select('*').eq('period', 'monthly'),
@@ -60,7 +63,7 @@ export default async function SettingsPage() {
   }
 
   // Accounts are keyed by a synthetic address, so the username is its local part.
-  const username = (auth.user?.email ?? '').split('@')[0] ?? '';
+  const username = session.email.split('@')[0] ?? '';
 
   return (
     <div className="space-y-4 py-4">
