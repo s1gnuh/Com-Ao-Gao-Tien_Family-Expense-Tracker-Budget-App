@@ -94,10 +94,12 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
     }
 
     setAmountRaw(String(parsed.amount));
-    setType('expense');
+    // A balance-change alert starting with + is money in, so the direction has
+    // to follow what was read rather than assuming every photo is a purchase.
+    setType(parsed.type);
     setSource('ai_receipt');
     if (parsed.occurred_at) setOccurredAt(parsed.occurred_at);
-    if (parsed.note || parsed.merchant) setNote(parsed.note ?? parsed.merchant ?? '');
+    if (parsed.note) setNote(parsed.note);
 
     const matched = matchCategory(parsed.category_guess, categories);
     if (matched) setCategoryId(matched.id);
@@ -106,7 +108,7 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
     setAiMessage(
       parsed.confidence < 0.6
         ? 'AI không chắc lắm — kiểm tra lại số tiền trước khi lưu.'
-        : 'AI đã điền sẵn, xem lại rồi lưu nhé.',
+        : `AI đã điền sẵn khoản ${parsed.type === 'income' ? 'thu' : 'chi'}, xem lại rồi lưu nhé.`,
     );
   }
 

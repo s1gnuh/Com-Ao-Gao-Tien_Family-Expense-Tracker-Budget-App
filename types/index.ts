@@ -74,10 +74,11 @@ export interface BudgetProgress {
 /** Shape `/api/ai/parse-receipt` returns on success. */
 export interface ParsedReceipt {
   amount: number | null;
+  /** Bank alerts can be money in; a shop receipt never is. */
+  type: TransactionType;
   note: string | null;
   category_guess: string | null;
   occurred_at: string | null;
-  merchant: string | null;
   confidence: number;
 }
 

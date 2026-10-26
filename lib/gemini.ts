@@ -3,28 +3,31 @@ import type { ParsedReceipt } from '@/types';
 const MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.1-flash-lite';
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-const SYSTEM_PROMPT = `Bạn là trình bóc tách hoá đơn tiếng Việt. Đọc ảnh hoá đơn hoặc mã QR chuyển khoản và trả về JSON.
+const SYSTEM_PROMPT = `Bóc tách một giao dịch tiền từ ảnh. Ảnh có thể là hoá đơn mua hàng HOẶC thông báo biến động số dư ngân hàng.
 
-Quy tắc:
-- amount: TỔNG tiền cuối cùng phải trả, đơn vị VND, số nguyên, không dấu phân cách. Bỏ qua tạm tính nếu có tổng cộng.
-- note: mô tả ngắn gọn dưới 60 ký tự, tiếng Việt.
-- category_guess: chọn ĐÚNG MỘT trong: An uong, Di chuyen, Cho bup, Nha cua, Hoa don, Suc khoe, Giao duc, Giai tri, Mua sam, Khac.
-- occurred_at: ngày trên hoá đơn, định dạng YYYY-MM-DD. Nếu không thấy, trả null.
-- merchant: tên cửa hàng nếu đọc được.
-- confidence: 0 đến 1, mức độ chắc chắn về amount.
-Nếu ảnh không phải hoá đơn, trả amount null và confidence 0.`;
+- amount: số tiền, VND, số nguyên dương, bỏ mọi dấu phân cách.
+  · Hoá đơn: lấy TỔNG CỘNG cuối cùng, bỏ qua tạm tính.
+  · Biến động số dư: lấy số tiền ngay sau dấu + hoặc -.
+- type: "income" nếu tiền VÀO (dấu +, "ghi có", "nhận tiền", "CT đến").
+  "expense" nếu tiền RA (dấu -, "ghi nợ", "thanh toán") và với MỌI hoá đơn mua hàng.
+- occurred_at: ngày giao dịch, định dạng YYYY-MM-DD. Ngày viết kiểu DD/MM/YY thuộc thế kỷ 21: 14/10/26 nghĩa là 2026-10-14. Không đọc được thì null.
+- note: mô tả ngắn dưới 60 ký tự, tiếng Việt. Ưu tiên tên cửa hàng hoặc nội dung chuyển khoản.
+- category_guess: ĐÚNG MỘT trong: An uong, Di chuyen, Cho bup, Nha cua, Hoa don, Suc khoe, Giao duc, Giai tri, Mua sam, Khac.
+- confidence: 0 đến 1, mức chắc chắn về amount.
+
+Ảnh không chứa giao dịch tiền: amount null, confidence 0.`;
 
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     amount: { type: 'integer', nullable: true },
+    type: { type: 'string', enum: ['income', 'expense'] },
     note: { type: 'string', nullable: true },
     category_guess: { type: 'string', nullable: true },
     occurred_at: { type: 'string', nullable: true },
-    merchant: { type: 'string', nullable: true },
     confidence: { type: 'number' },
   },
-  required: ['amount', 'note', 'category_guess', 'occurred_at', 'merchant', 'confidence'],
+  required: ['amount', 'type', 'note', 'category_guess', 'occurred_at', 'confidence'],
 } as const;
 
 export class GeminiError extends Error {
@@ -105,10 +108,12 @@ function normalize(raw: Record<string, unknown>): ParsedReceipt {
 
   return {
     amount,
+    // Anything but an explicit "income" is money going out — the common case,
+    // and the safer default if the model hedges.
+    type: raw.type === 'income' ? 'income' : 'expense',
     note: trimOrNull(raw.note, 60),
     category_guess: trimOrNull(raw.category_guess, 40),
     occurred_at: occurredAt,
-    merchant: trimOrNull(raw.merchant, 60),
     confidence: typeof raw.confidence === 'number' ? Math.min(1, Math.max(0, raw.confidence)) : 0,
   };
 }
