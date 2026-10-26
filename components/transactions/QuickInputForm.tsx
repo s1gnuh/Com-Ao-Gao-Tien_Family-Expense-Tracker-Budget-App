@@ -7,11 +7,26 @@ import Toast from '@/components/ui/Toast';
 import { downscaleImage, hashImage } from '@/lib/image';
 import { formatDate, formatVND, parseAmountInput, toDateInput } from '@/lib/formatters';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
+import { updateTransaction } from '@/app/(dashboard)/transactions/[id]/actions';
 import type { ApiResult, Category, ParsedReceipt, TransactionType, Wallet } from '@/types';
+
+export interface EditableTransaction {
+  id: string;
+  wallet_id: string;
+  category_id: string | null;
+  type: TransactionType;
+  amount: number;
+  note: string | null;
+  occurred_at: string;
+}
 
 interface QuickInputFormProps {
   wallets: Wallet[];
   categories: Category[];
+  /** Present means editing that row rather than creating a new one. */
+  initial?: EditableTransaction;
+  /** Rendered under the save button; the edit screen passes its delete control. */
+  footer?: React.ReactNode;
 }
 
 type AiStatus = 'idle' | 'working' | 'done' | 'error';
@@ -27,15 +42,24 @@ type ParseResponse =
 
 const INITIAL: CreateTransactionState = { error: null };
 
-export default function QuickInputForm({ wallets, categories }: QuickInputFormProps) {
-  const [state, formAction, submitting] = useActionState(createTransaction, INITIAL);
+export default function QuickInputForm({
+  wallets,
+  categories,
+  initial,
+  footer,
+}: QuickInputFormProps) {
+  const editing = initial !== undefined;
+  const [state, formAction, submitting] = useActionState(
+    editing ? updateTransaction : createTransaction,
+    INITIAL,
+  );
 
-  const [type, setType] = useState<TransactionType>('expense');
-  const [walletId, setWalletId] = useState(wallets[0]?.id ?? '');
-  const [amountRaw, setAmountRaw] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [note, setNote] = useState('');
-  const [occurredAt, setOccurredAt] = useState(toDateInput());
+  const [type, setType] = useState<TransactionType>(initial?.type ?? 'expense');
+  const [walletId, setWalletId] = useState(initial?.wallet_id ?? wallets[0]?.id ?? '');
+  const [amountRaw, setAmountRaw] = useState(initial ? String(Math.round(initial.amount)) : '');
+  const [categoryId, setCategoryId] = useState(initial?.category_id ?? '');
+  const [note, setNote] = useState(initial?.note ?? '');
+  const [occurredAt, setOccurredAt] = useState(initial?.occurred_at ?? toDateInput());
   const [source, setSource] = useState<'manual' | 'ai_receipt'>('manual');
   const [receiptHash, setReceiptHash] = useState('');
 
@@ -154,6 +178,80 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
       <input type="hidden" name="category_id" value={categoryId} />
       <input type="hidden" name="source" value={source} />
       <input type="hidden" name="receipt_hash" value={receiptHash} />
+      {initial && <input type="hidden" name="id" value={initial.id} />}
+
+      {!editing && (
+      <div className="card space-y-3">
+        <div>
+          <p className="text-sm font-medium">1. Tải hoá đơn lên</p>
+          <p className="text-xs text-muted">
+            AI điền sẵn số tiền, nội dung và ngày. Kéo xuống kiểm tra rồi lưu. Không có ảnh thì
+            nhập tay bên dưới cũng được.
+          </p>
+        </div>
+
+        {/* Two inputs rather than one: `capture` opens the camera directly, and
+            iOS drops the photo-library option from the sheet whenever it is set,
+            so an album pick needs an input without it. */}
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void handleReceipt(file);
+            event.target.value = '';
+          }}
+        />
+        <input
+          ref={albumRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void handleReceipt(file);
+            event.target.value = '';
+          }}
+        />
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={aiStatus === 'working'}
+            onClick={() => cameraRef.current?.click()}
+          >
+            📷 Chụp mới
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={aiStatus === 'working'}
+            onClick={() => albumRef.current?.click()}
+          >
+            🖼️ Chọn từ album
+          </Button>
+        </div>
+
+        {aiStatus === 'working' && (
+          <p role="status" className="text-center text-xs text-muted">
+            Đang đọc hoá đơn…
+          </p>
+        )}
+
+        {aiMessage && (
+          <p
+            role="status"
+            className={`text-xs ${aiStatus === 'error' ? 'text-expense' : 'text-muted'}`}
+          >
+            {aiMessage}
+          </p>
+        )}
+      </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface p-1 ring-1 ring-border">
         {(['expense', 'income'] as const).map((option) => (
@@ -267,73 +365,6 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
         onChange={(event) => setOccurredAt(event.target.value)}
       />
 
-      <div className="card space-y-3">
-        <div>
-          <p className="text-sm font-medium">Chụp hoá đơn</p>
-          <p className="text-xs text-muted">AI đọc số tiền, nội dung và ngày giúp bạn.</p>
-        </div>
-
-        {/* Two inputs rather than one: `capture` opens the camera directly, and
-            iOS drops the photo-library option from the sheet whenever it is set,
-            so an album pick needs an input without it. */}
-        <input
-          ref={cameraRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleReceipt(file);
-            event.target.value = '';
-          }}
-        />
-        <input
-          ref={albumRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleReceipt(file);
-            event.target.value = '';
-          }}
-        />
-
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={aiStatus === 'working'}
-            onClick={() => cameraRef.current?.click()}
-          >
-            📷 Chụp mới
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={aiStatus === 'working'}
-            onClick={() => albumRef.current?.click()}
-          >
-            🖼️ Chọn từ album
-          </Button>
-        </div>
-
-        {aiStatus === 'working' && (
-          <p role="status" className="text-center text-xs text-muted">
-            Đang đọc hoá đơn…
-          </p>
-        )}
-
-        {aiMessage && (
-          <p
-            role="status"
-            className={`text-xs ${aiStatus === 'error' ? 'text-expense' : 'text-muted'}`}
-          >
-            {aiMessage}
-          </p>
-        )}
-      </div>
 
       {state.error && (
         <p role="alert" className="text-sm text-expense">
@@ -342,8 +373,10 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
       )}
 
       <Button type="submit" full disabled={submitting || amount === null}>
-        {submitting ? 'Đang lưu…' : 'Lưu giao dịch'}
+        {submitting ? 'Đang lưu…' : editing ? 'Lưu thay đổi' : 'Lưu giao dịch'}
       </Button>
+
+      {footer}
 
       {toast && (
         <Toast title={toast.title} description={toast.description} onClose={() => setToast(null)} />

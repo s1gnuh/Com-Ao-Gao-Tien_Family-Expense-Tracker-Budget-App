@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import BalanceCard from '@/components/dashboard/BalanceCard';
 import CashFlowChart, { type CashFlowPoint } from '@/components/dashboard/CashFlowChart';
@@ -89,9 +90,23 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-4 py-4">
-      <header>
-        <p className="text-sm capitalize text-muted">{formatMonth(now)}</p>
-        <h1 className="text-2xl font-semibold">Tổng quan</h1>
+      <header className="flex items-center gap-3">
+        {/* Decorative: "Tổng quan" is the heading, and the logo's own backdrop
+            is the page colour, so its margins vanish into the page. */}
+        <Image
+          src="/brand/logo.png"
+          alt=""
+          aria-hidden
+          width={685}
+          height={418}
+          priority
+          sizes="96px"
+          className="h-12 w-auto shrink-0"
+        />
+        <div className="min-w-0">
+          <p className="text-sm capitalize text-muted">{formatMonth(now)}</p>
+          <h1 className="text-2xl font-semibold leading-tight">Tổng quan</h1>
+        </div>
       </header>
 
       <BalanceCard

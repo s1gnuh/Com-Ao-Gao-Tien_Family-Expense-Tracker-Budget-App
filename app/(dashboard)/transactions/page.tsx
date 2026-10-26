@@ -1,5 +1,5 @@
 import TransactionCalendar, { type DayTotal } from '@/components/transactions/TransactionCalendar';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, readSessionFast } from '@/lib/supabase/server';
 import { formatMonth, toDateInput } from '@/lib/formatters';
 import type { TransactionWithRelations, Wallet } from '@/types';
 
@@ -31,6 +31,7 @@ export default async function TransactionsPage({
   const to = toDateInput(end);
 
   const supabase = await createClient();
+  const session = await readSessionFast();
   const [walletsResult, transactionsResult, dailyResult] = await Promise.all([
     supabase.from('wallets').select('id,name,type'),
     supabase
@@ -76,6 +77,7 @@ export default async function TransactionsPage({
         dailyTotals={(dailyResult.data ?? []) as DayTotal[]}
         transactions={(transactionsResult.data ?? []) as unknown as TransactionWithRelations[]}
         walletNames={walletNames}
+        currentUserId={session.id}
       />
     </div>
   );

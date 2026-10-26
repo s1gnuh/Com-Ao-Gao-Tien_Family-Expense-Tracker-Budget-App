@@ -19,6 +19,8 @@ interface TransactionCalendarProps {
   dailyTotals: DayTotal[];
   transactions: TransactionWithRelations[];
   walletNames: Record<string, string>;
+  /** Rows this person wrote are the ones they may edit. */
+  currentUserId: string | null;
   prevMonth: string;
   nextMonth: string;
   monthLabel: string;
@@ -31,6 +33,7 @@ export default function TransactionCalendar({
   dailyTotals,
   transactions,
   walletNames,
+  currentUserId,
   prevMonth,
   nextMonth,
   monthLabel,
@@ -164,6 +167,7 @@ export default function TransactionCalendar({
                 key={transaction.id}
                 transaction={transaction}
                 walletName={walletNames[transaction.wallet_id]}
+                editable={transaction.created_by === currentUserId}
               />
             ))}
           </ul>
