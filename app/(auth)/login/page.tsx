@@ -6,32 +6,32 @@ import type { AuthError } from '@supabase/supabase-js';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { createClient } from '@/lib/supabase/client';
+import { normalizeUsername, usernameToEmail, validateUsername } from '@/lib/auth';
 
 type Mode = 'login' | 'register';
 
 /**
- * Supabase failure modes a household hits in practice. The built-in mailer is
- * capped at a couple of messages an hour on the free tier, so a burst of signup
- * attempts reads as a flat failure unless the cause is spelled out.
+ * Accounts are keyed by a synthetic address built from the username, so
+ * Supabase's email-flavoured errors have to be retold in username terms.
  */
 function authMessage(error: AuthError, fallback: string): string {
   switch (error.code) {
-    case 'over_email_send_rate_limit':
-    case 'over_request_rate_limit':
-      return 'Supabase đã hết lượt gửi email miễn phí (2 mail/giờ). Chờ khoảng 1 giờ, hoặc tắt "Confirm email" trong Supabase để đăng ký ngay không cần mail.';
     case 'user_already_exists':
     case 'email_exists':
-      return 'Email này đã có tài khoản, thử đăng nhập nhé.';
-    case 'email_not_confirmed':
-      return 'Tài khoản chưa xác nhận email. Kiểm tra hộp thư, hoặc tắt "Confirm email" trong Supabase.';
-    case 'weak_password':
-      return 'Mật khẩu quá yếu, thử thêm chữ hoa và số.';
-    case 'email_address_invalid':
-      return 'Supabase không chấp nhận địa chỉ email này.';
+      return 'Tên đăng nhập này đã có người dùng, chọn tên khác nhé.';
+    case 'invalid_credentials':
+      return 'Tên đăng nhập hoặc mật khẩu không đúng.';
+    case 'email_provider_disabled':
+      return 'Supabase đang tắt provider Email. Bật lại trong Authentication → Sign In / Providers → Email.';
     case 'signup_disabled':
       return 'Dự án Supabase đang tắt đăng ký tài khoản mới.';
-    case 'invalid_credentials':
-      return 'Email hoặc mật khẩu không đúng.';
+    case 'weak_password':
+      return 'Mật khẩu quá yếu, thử thêm chữ hoa và số.';
+    case 'over_email_send_rate_limit':
+    case 'over_request_rate_limit':
+      return 'Supabase đang giới hạn số lần thử. Chờ một lát rồi thử lại.';
+    case 'email_address_invalid':
+      return 'Tên đăng nhập này Supabase không chấp nhận, thử tên khác.';
     default:
       return fallback;
   }
@@ -57,18 +57,16 @@ function AuthForm() {
   const next = useSearchParams().get('next') ?? '/';
 
   const [mode, setMode] = useState<Mode>('login');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   function switchMode(target: Mode) {
     setMode(target);
     setError(null);
-    setNotice(null);
   }
 
   async function handleLogin(event: React.FormEvent) {
@@ -77,10 +75,13 @@ function AuthForm() {
     setError(null);
 
     const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: usernameToEmail(username),
+      password,
+    });
 
     if (signInError) {
-      setError(authMessage(signInError, 'Email hoặc mật khẩu không đúng.'));
+      setError(authMessage(signInError, 'Tên đăng nhập hoặc mật khẩu không đúng.'));
       setPending(false);
       return;
     }
@@ -93,6 +94,11 @@ function AuthForm() {
     event.preventDefault();
     setError(null);
 
+    const usernameProblem = validateUsername(username);
+    if (usernameProblem) {
+      setError(usernameProblem);
+      return;
+    }
     if (password.length < 6) {
       setError('Mật khẩu cần ít nhất 6 ký tự.');
       return;
@@ -104,10 +110,10 @@ function AuthForm() {
 
     setPending(true);
     const supabase = createClient();
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
+    const { error: signUpError } = await supabase.auth.signUp({
+      email: usernameToEmail(username),
       password,
-      options: { data: { display_name: displayName.trim() || email.split('@')[0] } },
+      options: { data: { display_name: displayName.trim() || normalizeUsername(username) } },
     });
 
     if (signUpError) {
@@ -116,16 +122,8 @@ function AuthForm() {
       return;
     }
 
-    // Email confirmation is on: Supabase returns a user but no session yet.
-    if (!data.session) {
-      setNotice('Đã gửi email xác nhận. Kiểm tra hộp thư rồi quay lại đăng nhập nhé.');
-      setMode('login');
-      setPassword('');
-      setConfirmPassword('');
-      setPending(false);
-      return;
-    }
-
+    // With email confirmation off Supabase signs the account in immediately, so
+    // there is no pending-confirmation state to handle.
     router.replace(next);
     router.refresh();
   }
@@ -155,25 +153,23 @@ function AuthForm() {
         </button>
       </div>
 
-      {notice && (
-        <p role="status" className="rounded-xl bg-brand/10 p-3 text-sm text-brand">
-          {notice}
-        </p>
-      )}
-
       {mode === 'login' ? (
         <form onSubmit={handleLogin} className="space-y-3">
           <Input
-            label="Email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
+            label="Tên đăng nhập"
+            name="username"
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
           />
           <Input
             label="Mật khẩu"
+            name="password"
             type="password"
             autoComplete="current-password"
             required
@@ -194,7 +190,22 @@ function AuthForm() {
       ) : (
         <form onSubmit={handleRegister} className="space-y-3">
           <Input
+            label="Tên đăng nhập"
+            name="username"
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            required
+            placeholder="bo, me, ti, be…"
+            hint="Chữ thường, số, dấu chấm hoặc gạch. Từ 3 ký tự."
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+          <Input
             label="Tên hiển thị"
+            name="display_name"
             type="text"
             autoComplete="name"
             maxLength={40}
@@ -203,16 +214,8 @@ function AuthForm() {
             onChange={(event) => setDisplayName(event.target.value)}
           />
           <Input
-            label="Email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-          <Input
             label="Mật khẩu"
+            name="new-password"
             type="password"
             autoComplete="new-password"
             required
@@ -222,6 +225,7 @@ function AuthForm() {
           />
           <Input
             label="Nhập lại mật khẩu"
+            name="confirm-password"
             type="password"
             autoComplete="new-password"
             required
