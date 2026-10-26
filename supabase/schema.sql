@@ -353,12 +353,12 @@ alter table public.recurring_bills replica identity full;
 do $$ begin
   alter publication supabase_realtime add table public.transactions;
 exception when duplicate_object then null; end $$;
-do $ begin
+do $$ begin
   alter publication supabase_realtime add table public.budgets;
-exception when duplicate_object then null; end $;
-do $ begin
+exception when duplicate_object then null; end $$;
+do $$ begin
   alter publication supabase_realtime add table public.recurring_bills;
-exception when duplicate_object then null; end $;
+exception when duplicate_object then null; end $$;
 
 -- ---------------------------------------------------------------- seed
 
