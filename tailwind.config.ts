@@ -13,6 +13,8 @@ const config: Config = {
         brand: 'rgb(var(--c-brand) / <alpha-value>)',
         income: 'rgb(var(--c-income) / <alpha-value>)',
         expense: 'rgb(var(--c-expense) / <alpha-value>)',
+        'series-in': 'rgb(var(--c-series-in) / <alpha-value>)',
+        'series-out': 'rgb(var(--c-series-out) / <alpha-value>)',
       },
       spacing: {
         'safe-t': 'env(safe-area-inset-top)',

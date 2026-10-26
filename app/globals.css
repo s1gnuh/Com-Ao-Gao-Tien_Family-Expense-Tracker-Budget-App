@@ -11,8 +11,14 @@
     --c-fg: 0 0 0;
     --c-muted: 142 142 147;
     --c-brand: 0 122 255;
-    --c-income: 52 199 89;
-    --c-expense: 255 59 48;
+    --c-income: 21 128 61;
+    --c-expense: 197 34 31;
+
+    /* Chart series. Green/red is the money convention but collapses to ΔE 2–5
+       under red-green colour blindness once both sit on a dark surface, so the
+       plotted series use a validated blue/orange pair instead. */
+    --c-series-in: 9 105 218;
+    --c-series-out: 188 76 0;
 
     /* Fixed so page padding can reserve the exact bar height and never shift. */
     --nav-h: 56px;
@@ -31,6 +37,8 @@
       --c-brand: 10 132 255;
       --c-income: 48 209 88;
       --c-expense: 255 69 58;
+      --c-series-in: 31 111 235;
+      --c-series-out: 210 105 30;
 
       color-scheme: dark;
     }
@@ -45,6 +53,8 @@
     --c-brand: 10 132 255;
     --c-income: 48 209 88;
     --c-expense: 255 69 58;
+    --c-series-in: 31 111 235;
+    --c-series-out: 210 105 30;
 
     color-scheme: dark;
   }

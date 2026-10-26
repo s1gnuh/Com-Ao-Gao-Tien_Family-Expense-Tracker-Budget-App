@@ -1,20 +1,133 @@
-import { formatMonth } from '@/lib/formatters';
+import Link from 'next/link';
+import BalanceCard from '@/components/dashboard/BalanceCard';
+import CashFlowChart, { type CashFlowPoint } from '@/components/dashboard/CashFlowChart';
+import { createClient } from '@/lib/supabase/server';
+import { formatMonth, formatVND, toDateInput } from '@/lib/formatters';
+import type { Wallet } from '@/types';
 
-export default function DashboardPage() {
+export const dynamic = 'force-dynamic';
+
+interface WalletBalance {
+  wallet_id: string;
+  name: string;
+  type: Wallet['type'];
+  owner_id: string | null;
+  balance: number;
+}
+
+interface MonthSlot {
+  key: string;
+  label: string;
+  thu: number;
+  chi: number;
+}
+
+/** Six slots ending with the current month, oldest first. */
+function buildMonthSlots(now: Date): MonthSlot[] {
+  const slots: MonthSlot[] = [];
+  for (let offset = 5; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    slots.push({
+      key: `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}`,
+      label: `T${date.getMonth() + 1}`,
+      thu: 0,
+      chi: 0,
+    });
+  }
+  return slots;
+}
+
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const now = new Date();
+  const since = toDateInput(new Date(now.getFullYear(), now.getMonth() - 5, 1));
+
+  const [balancesResult, transactionsResult] = await Promise.all([
+    supabase.from('wallet_balances').select('wallet_id,name,type,owner_id,balance'),
+    supabase.from('transactions').select('type,amount,occurred_at').gte('occurred_at', since),
+  ]);
+
+  if (balancesResult.error?.code === 'PGRST205') {
+    return (
+      <div className="space-y-4 py-4">
+        <h1 className="text-2xl font-semibold">Tổng quan</h1>
+        <p className="card text-sm text-muted">
+          Thiếu view <code>wallet_balances</code>. Mở Supabase SQL Editor và chạy lại{' '}
+          <code>supabase/schema.sql</code> để tạo.
+        </p>
+      </div>
+    );
+  }
+
+  const balances = (balancesResult.data ?? []) as WalletBalance[];
+  const transactions = (transactionsResult.data ?? []) as {
+    type: 'income' | 'expense';
+    amount: number;
+    occurred_at: string;
+  }[];
+
+  const slots = buildMonthSlots(now);
+  const byKey = new Map(slots.map((slot) => [slot.key, slot]));
+
+  for (const transaction of transactions) {
+    const slot = byKey.get(transaction.occurred_at.slice(0, 7));
+    if (!slot) continue;
+    if (transaction.type === 'income') slot.thu += Number(transaction.amount);
+    else slot.chi += Number(transaction.amount);
+  }
+
+  const current = slots[slots.length - 1]!;
+  const totalBalance = balances.reduce((sum, row) => sum + Number(row.balance), 0);
+  const chartData: CashFlowPoint[] = slots.map(({ label, thu, chi }) => ({ label, thu, chi }));
+
   return (
     <div className="space-y-4 py-4">
       <header>
-        <p className="text-sm text-muted">{formatMonth(new Date())}</p>
+        <p className="text-sm capitalize text-muted">{formatMonth(now)}</p>
         <h1 className="text-2xl font-semibold">Tổng quan</h1>
       </header>
 
-      <section className="card">
-        <p className="text-sm text-muted">Số dư — chờ kết nối Supabase</p>
+      <BalanceCard
+        balance={totalBalance}
+        income={current.thu}
+        expense={current.chi}
+        monthLabel={`T${now.getMonth() + 1}`}
+      />
+
+      <CashFlowChart data={chartData} />
+
+      <section className="card" aria-label="Số dư từng ví">
+        <h2 className="mb-3 text-sm font-medium">Ví & Quỹ</h2>
+        {balances.length === 0 ? (
+          <p className="text-sm text-muted">Chưa có ví nào.</p>
+        ) : (
+          <ul className="space-y-2">
+            {balances
+              .slice()
+              .sort((a, b) => (a.type === b.type ? 0 : a.type === 'shared' ? -1 : 1))
+              .map((wallet) => (
+                <li key={wallet.wallet_id} className="flex items-center justify-between gap-3">
+                  <span className="truncate text-sm">
+                    <span aria-hidden className="mr-1.5">
+                      {wallet.type === 'shared' ? '👨‍👩‍👧‍👦' : '👤'}
+                    </span>
+                    {wallet.name}
+                  </span>
+                  <span className="tabular shrink-0 text-sm font-medium">
+                    {formatVND(Number(wallet.balance))}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
       </section>
 
-      <section className="card">
-        <p className="text-sm text-muted">Dòng tiền — chờ CashFlowChart</p>
-      </section>
+      <Link
+        href="/transactions"
+        className="tap block rounded-xl py-3 text-center text-sm font-medium text-brand"
+      >
+        Xem tất cả giao dịch
+      </Link>
     </div>
   );
 }

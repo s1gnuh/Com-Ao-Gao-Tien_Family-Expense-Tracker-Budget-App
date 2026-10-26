@@ -184,6 +184,24 @@ create policy budgets_write on public.budgets
   for all to authenticated
   using (public.can_access_wallet(wallet_id)) with check (public.can_access_wallet(wallet_id));
 
+-- ---------------------------------------------------------------- views
+
+-- Balance is a sum over every transaction a wallet ever had, so computing it in
+-- the client would mean shipping the whole history to the phone on each load.
+-- security_invoker keeps the caller's RLS in force, so this exposes no wallet
+-- the caller could not already read.
+create or replace view public.wallet_balances
+with (security_invoker = true) as
+select
+  w.id as wallet_id,
+  w.name,
+  w.type,
+  w.owner_id,
+  coalesce(sum(case when t.type = 'income' then t.amount else -t.amount end), 0)::numeric(14, 2) as balance
+from public.wallets w
+left join public.transactions t on t.wallet_id = w.id
+group by w.id, w.name, w.type, w.owner_id;
+
 -- ---------------------------------------------------------------- realtime
 
 alter table public.transactions replica identity full;
