@@ -53,8 +53,13 @@ create table if not exists public.transactions (
   occurred_at date not null default current_date,
   source text not null default 'manual' check (source in ('manual', 'ai_receipt')),
   receipt_url text,
+  -- SHA-256 of the uploaded image, so the same bill photographed once cannot be
+  -- entered twice and a repeat upload never reaches Gemini.
+  receipt_hash text,
   created_at timestamptz not null default now()
 );
+
+alter table public.transactions add column if not exists receipt_hash text;
 
 create index if not exists transactions_wallet_date_idx on public.transactions (wallet_id, occurred_at desc);
 create index if not exists transactions_category_idx on public.transactions (category_id);
@@ -62,6 +67,8 @@ create index if not exists transactions_category_idx on public.transactions (cat
 -- reach, which the wallet-leading index above cannot serve.
 create index if not exists transactions_date_idx on public.transactions (occurred_at desc);
 create index if not exists transactions_author_idx on public.transactions (created_by);
+create index if not exists transactions_receipt_hash_idx on public.transactions (receipt_hash)
+  where receipt_hash is not null;
 
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),

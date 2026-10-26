@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, readSessionFast } from '@/lib/supabase/server';
 import type { TransactionSource, TransactionType } from '@/types';
 
 export interface CreateTransactionState {
@@ -17,8 +17,12 @@ export async function createTransaction(
   formData: FormData,
 ): Promise<CreateTransactionState> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: 'Phiên đăng nhập đã hết, vui lòng vào lại.' };
+  // getUser() would add a 300-400ms round trip before every save. The id below
+  // is not trusted: the insert policy requires created_by = auth.uid(), which
+  // Postgres derives from the token it validates itself, so a wrong or forged
+  // value is rejected by the database rather than accepted here.
+  const session = await readSessionFast();
+  if (!session.id) return { error: 'Phiên đăng nhập đã hết, vui lòng vào lại.' };
 
   const walletId = String(formData.get('wallet_id') ?? '');
   if (!UUID.test(walletId)) return { error: 'Chưa chọn ví.' };
@@ -41,16 +45,20 @@ export async function createTransaction(
   const noteRaw = String(formData.get('note') ?? '').trim();
   const note = noteRaw.length > 0 ? noteRaw.slice(0, 140) : null;
 
+  const hashRaw = String(formData.get('receipt_hash') ?? '');
+  const receiptHash = /^[0-9a-f]{64}$/.test(hashRaw) ? hashRaw : null;
+
   // RLS re-checks wallet access and that created_by matches the caller.
   const { error } = await supabase.from('transactions').insert({
     wallet_id: walletId,
-    created_by: auth.user.id,
+    created_by: session.id,
     category_id: categoryId,
     type,
     amount,
     note,
     occurred_at: occurredAt,
     source: source === 'ai_receipt' ? 'ai_receipt' : 'manual',
+    receipt_hash: receiptHash,
   });
 
   if (error) return { error: 'Không lưu được giao dịch, thử lại nhé.' };

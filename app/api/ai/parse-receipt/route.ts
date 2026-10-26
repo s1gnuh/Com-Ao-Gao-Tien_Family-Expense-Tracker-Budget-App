@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { GeminiError, parseReceiptImage } from '@/lib/gemini';
-import { getSessionUser } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import type { ApiResult, ParsedReceipt } from '@/types';
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 // Vercel's serverless request body cap is 4.5MB, so reject above that ourselves
 // to give a readable error instead of a platform-level 413.
@@ -21,10 +23,12 @@ export async function POST(request: Request) {
   if (!user) return fail('Chưa đăng nhập.', 401);
 
   let file: File | null = null;
+  let hash = '';
   try {
     const form = await request.formData();
     const value = form.get('image');
     if (value instanceof File) file = value;
+    hash = String(form.get('hash') ?? '');
   } catch {
     return fail('Không đọc được dữ liệu gửi lên.', 400);
   }
@@ -33,6 +37,29 @@ export async function POST(request: Request) {
   if (file.size === 0) return fail('Ảnh rỗng.', 400);
   if (file.size > MAX_BYTES) return fail('Ảnh quá lớn, tối đa 4MB.', 413);
   if (!ALLOWED_TYPES.includes(file.type)) return fail('Định dạng ảnh không được hỗ trợ.', 415);
+
+  // Checked before Gemini, not after: a bill already entered costs no tokens.
+  if (SHA256_HEX.test(hash)) {
+    const supabase = await createClient();
+    const { data: seen } = await supabase
+      .from('transactions')
+      .select('amount,occurred_at,note')
+      .eq('receipt_hash', hash)
+      .limit(1)
+      .maybeSingle();
+
+    if (seen) {
+      return NextResponse.json<ApiResult<never> & { duplicate: true; seen: typeof seen }>(
+        {
+          ok: false,
+          error: 'Ảnh này đã được tải lên rồi.',
+          duplicate: true,
+          seen,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   try {
     const base64 = Buffer.from(await file.arrayBuffer()).toString('base64');

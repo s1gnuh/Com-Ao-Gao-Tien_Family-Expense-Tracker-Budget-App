@@ -4,8 +4,8 @@ import { useActionState, useMemo, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Toast from '@/components/ui/Toast';
-import { downscaleImage } from '@/lib/image';
-import { formatVND, parseAmountInput, toDateInput } from '@/lib/formatters';
+import { downscaleImage, hashImage } from '@/lib/image';
+import { formatDate, formatVND, parseAmountInput, toDateInput } from '@/lib/formatters';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
 import type { ApiResult, Category, ParsedReceipt, TransactionType, Wallet } from '@/types';
 
@@ -15,6 +15,15 @@ interface QuickInputFormProps {
 }
 
 type AiStatus = 'idle' | 'working' | 'done' | 'error';
+
+type ParseResponse =
+  | { ok: true; data: ParsedReceipt }
+  | {
+      ok: false;
+      error: string;
+      duplicate?: boolean;
+      seen?: { amount: number; occurred_at: string; note: string | null } | null;
+    };
 
 const INITIAL: CreateTransactionState = { error: null };
 
@@ -28,6 +37,7 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
   const [note, setNote] = useState('');
   const [occurredAt, setOccurredAt] = useState(toDateInput());
   const [source, setSource] = useState<'manual' | 'ai_receipt'>('manual');
+  const [receiptHash, setReceiptHash] = useState('');
 
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const [aiMessage, setAiMessage] = useState<string | null>(null);
@@ -59,19 +69,35 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
     setAiMessage(null);
 
     try {
+      const digest = await hashImage(file);
       const blob = await downscaleImage(file);
       const body = new FormData();
       body.append('image', blob, 'receipt.jpg');
+      body.append('hash', digest);
 
       const response = await fetch('/api/ai/parse-receipt', { method: 'POST', body });
-      const result = (await response.json()) as ApiResult<ParsedReceipt>;
+      const result = (await response.json()) as ParseResponse;
 
       if (!result.ok) {
+        setAiStatus('idle');
+        if (result.duplicate) {
+          const when = result.seen?.occurred_at ? formatDate(result.seen.occurred_at) : null;
+          const much = result.seen ? formatVND(Number(result.seen.amount)) : null;
+          setToast({
+            title: 'Ảnh đã tải lên rồi',
+            description:
+              when && much
+                ? `Đã ghi ${much} ngày ${when}${result.seen?.note ? ` — ${result.seen.note}` : ''}.`
+                : 'Hoá đơn này đã có trong sổ.',
+          });
+          return;
+        }
         setAiStatus('error');
         setAiMessage(result.error);
         return;
       }
 
+      setReceiptHash(digest);
       applyParsed(result.data);
     } catch {
       setAiStatus('error');
@@ -127,6 +153,7 @@ export default function QuickInputForm({ wallets, categories }: QuickInputFormPr
       <input type="hidden" name="wallet_id" value={walletId} />
       <input type="hidden" name="category_id" value={categoryId} />
       <input type="hidden" name="source" value={source} />
+      <input type="hidden" name="receipt_hash" value={receiptHash} />
 
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface p-1 ring-1 ring-border">
         {(['expense', 'income'] as const).map((option) => (

@@ -2,6 +2,19 @@ const MAX_EDGE = 1600;
 const QUALITY = 0.8;
 
 /**
+ * SHA-256 of the file exactly as picked. Hashing the original rather than the
+ * re-encoded upload keeps it stable: canvas JPEG output varies between browsers
+ * and iOS versions, so the same screenshot could otherwise hash differently on
+ * two devices and slip past the duplicate check.
+ */
+export async function hashImage(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
  * iPhone camera shots run 3-6MB, over the serverless body cap, and cost more
  * Gemini tokens than a receipt needs. Re-encode to a bounded JPEG first — this
  * also sidesteps HEIC reaching the API, since canvas always emits JPEG.
