@@ -38,9 +38,10 @@ export async function POST(request: Request) {
   if (file.size > MAX_BYTES) return fail('Ảnh quá lớn, tối đa 4MB.', 413);
   if (!ALLOWED_TYPES.includes(file.type)) return fail('Định dạng ảnh không được hỗ trợ.', 415);
 
+  const supabase = await createClient();
+
   // Checked before Gemini, not after: a bill already entered costs no tokens.
   if (SHA256_HEX.test(hash)) {
-    const supabase = await createClient();
     const { data: seen } = await supabase
       .from('transactions')
       .select('amount,occurred_at,note')
@@ -64,9 +65,24 @@ export async function POST(request: Request) {
   try {
     const base64 = Buffer.from(await file.arrayBuffer()).toString('base64');
     const parsed = await parseReceiptImage(base64, file.type);
+    await countCall(supabase);
     return NextResponse.json<ApiResult<ParsedReceipt>>({ ok: true, data: parsed });
   } catch (error) {
-    if (error instanceof GeminiError) return fail(error.message, error.status);
+    if (error instanceof GeminiError) {
+      // A 429 was turned away before it cost a request; anything else reached
+      // the model, so it is spent whether or not we could read the answer.
+      if (error.status !== 429) await countCall(supabase);
+      return fail(error.message, error.status);
+    }
     return fail('Không bóc tách được hoá đơn, vui lòng nhập tay.', 500);
   }
+}
+
+/**
+ * Best effort: the tally is a convenience, so a project that has not run the
+ * latest schema.sql yet still parses receipts rather than erroring on a
+ * function that is not there.
+ */
+async function countCall(supabase: Awaited<ReturnType<typeof createClient>>) {
+  await supabase.rpc('bump_ai_usage');
 }

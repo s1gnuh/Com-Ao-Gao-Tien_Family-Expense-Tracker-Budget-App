@@ -104,6 +104,14 @@ create table if not exists public.recurring_bills (
 
 create index if not exists bills_wallet_idx on public.recurring_bills (wallet_id);
 
+-- Gemini never reports how much of the free tier is left — you only find out by
+-- being refused — so the household counts its own calls here. One row per day,
+-- shared by all four, and no personal data in it.
+create table if not exists public.ai_usage (
+  used_on date primary key,
+  calls int not null default 0
+);
+
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
   wallet_id uuid not null references public.wallets (id) on delete cascade,
@@ -128,6 +136,53 @@ as $$
     select 1 from public.wallets
     where id = w and (owner_id = auth.uid() or type = 'shared')
   );
+$$;
+
+-- Google's daily quota rolls over at midnight Pacific, not at midnight here and
+-- not at midnight UTC, which is what the database would otherwise count by.
+-- Naming the zone rather than an offset keeps it right across US daylight saving.
+create or replace function public.ai_quota_day()
+returns date
+language sql
+stable
+set search_path = public
+as $$
+  select (now() at time zone 'America/Los_Angeles')::date;
+$$;
+
+-- security definer so a call can be tallied without granting the household
+-- write access to the table, which would let anyone rewrite the count.
+create or replace function public.bump_ai_usage()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  total int;
+begin
+  insert into public.ai_usage (used_on, calls)
+  values (public.ai_quota_day(), 1)
+  on conflict (used_on) do update set calls = ai_usage.calls + 1
+  returning calls into total;
+
+  return total;
+end;
+$$;
+
+-- Both numbers come from Postgres so the page never has to work out when
+-- Pacific midnight falls from a server running in UTC.
+create or replace function public.ai_usage_today()
+returns table (calls int, resets_at timestamptz)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    coalesce((select u.calls from public.ai_usage u where u.used_on = public.ai_quota_day()), 0),
+    (date_trunc('day', now() at time zone 'America/Los_Angeles') + interval '1 day')
+      at time zone 'America/Los_Angeles';
 $$;
 
 -- Every new auth user gets a profile and their own personal wallet.
@@ -162,6 +217,7 @@ alter table public.wallets enable row level security;
 alter table public.categories enable row level security;
 alter table public.transactions enable row level security;
 alter table public.budgets enable row level security;
+alter table public.ai_usage enable row level security;
 
 -- Profiles: the four household members can see each other (shared-wallet rows
 -- show who added them), but only edit themselves.
@@ -224,6 +280,13 @@ create policy transactions_update_own on public.transactions
 drop policy if exists transactions_delete_own on public.transactions;
 create policy transactions_delete_own on public.transactions
   for delete to authenticated using (created_by = auth.uid());
+
+-- The AI tally is a household-wide number everyone may read. There is no write
+-- policy on purpose: bump_ai_usage() is the only way in, so the count cannot be
+-- edited to look better than it is.
+drop policy if exists ai_usage_select on public.ai_usage;
+create policy ai_usage_select on public.ai_usage
+  for select to authenticated using (true);
 
 -- Budgets follow wallet access; the shared budget is set collaboratively.
 drop policy if exists budgets_select on public.budgets;
