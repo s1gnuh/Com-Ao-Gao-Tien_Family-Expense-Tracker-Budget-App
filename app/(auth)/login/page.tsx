@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState } from 'react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { AuthError } from '@supabase/supabase-js';
 import Button from '@/components/ui/Button';
@@ -40,9 +41,19 @@ function authMessage(error: AuthError, fallback: string): string {
 export default function LoginPage() {
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 pt-safe-t pb-safe-b">
-      <header className="mb-8 text-center">
-        <h1 className="text-3xl font-semibold">Cơm Áo Gạo Tiền</h1>
-        <p className="mt-1 text-sm text-muted">Chi tiêu của nhà mình</p>
+      <header className="mb-8 flex justify-center">
+        {/* The logo file's own backdrop is the page colour (#fefcf5), so it
+            drops straight onto the page with no card or edge around it. Its
+            baked-in tagline replaces the separate "Chi tiêu của nhà mình" line. */}
+        <Image
+          src="/brand/logo.png"
+          alt="Cơm Áo Gạo Tiền — ứng dụng quản lý thu chi gia đình"
+          width={685}
+          height={418}
+          priority
+          sizes="(max-width: 480px) 75vw, 320px"
+          className="h-auto w-[min(75vw,320px)]"
+        />
       </header>
 
       <Suspense fallback={<div className="h-[320px]" />}>
