@@ -78,15 +78,14 @@ export async function parseReceiptImage(base64Image: string, mimeType: string): 
   }
 
   if (!response.ok) {
-    // 429 means the free-tier quota is spent; the UI falls back to manual entry.
-    // 503 means the model is overloaded — same fallback, different reason.
+    if (response.status === 429) throw await quotaError(response);
+
+    // 503 means the model is overloaded; the UI falls back to manual entry.
     throw new GeminiError(
-      response.status === 429
-        ? 'Đã hết lượt AI miễn phí, vui lòng nhập tay.'
-        : response.status === 503
-          ? 'Gemini đang quá tải, vui lòng thử lại hoặc nhập tay.'
-          : 'Gemini từ chối yêu cầu.',
-      response.status === 429 ? 429 : 502,
+      response.status === 503
+        ? 'Gemini đang quá tải, vui lòng thử lại hoặc nhập tay.'
+        : 'Gemini từ chối yêu cầu.',
+      502,
     );
   }
 
@@ -98,6 +97,50 @@ export async function parseReceiptImage(base64Image: string, mimeType: string): 
   if (!text) throw new GeminiError('Gemini không trả về dữ liệu.', 502);
 
   return normalize(JSON.parse(text) as Record<string, unknown>);
+}
+
+interface QuotaViolation {
+  quotaId?: string;
+}
+
+interface QuotaDetail {
+  violations?: QuotaViolation[];
+  retryDelay?: string;
+}
+
+/**
+ * A 429 is two different problems wearing one status code: the per-minute rate
+ * (15 on the free tier, which a batch of five reaches after three goes) or the
+ * day's quota, which is gone until it rolls over. Telling someone the AI is
+ * used up for the day and they should type it in by hand, when the real answer
+ * is to wait half a minute, is the wrong advice — so the quota id in the body
+ * decides the wording.
+ */
+async function quotaError(response: Response): Promise<GeminiError> {
+  let perMinute = false;
+  let retrySeconds = 0;
+
+  try {
+    const body = (await response.json()) as { error?: { details?: QuotaDetail[] } };
+
+    for (const detail of body.error?.details ?? []) {
+      if (detail.violations?.some((item) => /PerMinute/i.test(item.quotaId ?? ''))) {
+        perMinute = true;
+      }
+      if (typeof detail.retryDelay === 'string') {
+        retrySeconds = Math.ceil(Number.parseFloat(detail.retryDelay)) || 0;
+      }
+    }
+  } catch {
+    // Unreadable body: fall through to the day-quota wording, the safer guess.
+  }
+
+  return new GeminiError(
+    perMinute
+      ? `Gửi hơi nhanh nên Gemini chặn tạm. Chờ ${retrySeconds > 0 ? `${retrySeconds} giây` : 'khoảng một phút'} rồi thử lại.`
+      : 'Đã hết lượt AI của hôm nay. Xem trang Cài đặt để biết lúc nào đặt lại.',
+    429,
+  );
 }
 
 function normalize(raw: Record<string, unknown>): ParsedReceipt {

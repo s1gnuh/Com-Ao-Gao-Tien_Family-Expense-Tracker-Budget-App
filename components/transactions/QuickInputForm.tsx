@@ -159,7 +159,6 @@ export default function QuickInputForm({
       return;
     }
 
-    const tooMany = images.length > MAX_RECEIPT_BATCH;
     const picked = images.slice(0, MAX_RECEIPT_BATCH);
 
     setAiStatus('working');
@@ -196,11 +195,21 @@ export default function QuickInputForm({
       );
 
       const drafts: ReceiptDraft[] = [];
-      let skipped = images.length - prepared.length;
+      // Counted apart from the ones dropped for being over the cap, which the
+      // message below explains on its own — together they would read as double.
+      let unusable = picked.length - prepared.length;
+      // Rate limits and the daily quota turn away the whole batch, not one bad
+      // photo, so that reason is worth repeating instead of "could not read it".
+      let reason: string | null = null;
 
       for (const { item, parsed } of results) {
-        if (!parsed.ok || parsed.data.amount === null) {
-          skipped += 1;
+        if (!parsed.ok) {
+          unusable += 1;
+          if (!parsed.duplicate && !reason) reason = parsed.error;
+          continue;
+        }
+        if (parsed.data.amount === null) {
+          unusable += 1;
           continue;
         }
 
@@ -226,23 +235,33 @@ export default function QuickInputForm({
         setToast({
           title: 'Không đọc được ảnh nào',
           description:
+            reason ??
             'Có thể các ảnh đã nhập rồi, hoặc không phải hoá đơn. Thử ảnh khác hoặc nhập tay nhé.',
         });
         return;
       }
 
-      if (tooMany || skipped > 0) {
+      const cappedOut = images.length - picked.length;
+
+      if (cappedOut > 0 || unusable > 0) {
         setToast({
           tone: 'info',
           title: `Đọc được ${drafts.length} hoá đơn`,
-          description: tooMany
-            ? `Mỗi lượt chỉ đọc ${MAX_RECEIPT_BATCH} ảnh, nên ${images.length - MAX_RECEIPT_BATCH} ảnh cuối đã bị bỏ qua.`
-            : `${skipped} ảnh không đọc được hoặc đã nhập rồi.`,
+          description: [
+            cappedOut > 0
+              ? `Mỗi lượt chỉ đọc ${MAX_RECEIPT_BATCH} ảnh, nên ${cappedOut} ảnh cuối đã bị bỏ qua.`
+              : '',
+            unusable > 0
+              ? (reason ?? `${unusable} ảnh không đọc được hoặc đã nhập rồi.`)
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
           note: 'Vuốt phải để duyệt, vuốt trái để sửa.',
         });
       }
 
-      setBatch({ drafts, skipped });
+      setBatch({ drafts, skipped: cappedOut + unusable });
     } catch {
       setProgress(null);
       setAiStatus('error');

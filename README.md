@@ -39,6 +39,7 @@ Một cuốn sổ chi tiêu chung cho đúng **bốn người trong một nhà**
 - **Đồng bộ thời gian thực** — Supabase Realtime, cộng nút làm mới thủ công cho lúc iOS ngắt kết nối khi app chạy nền.
 - **Sửa / xoá giao dịch** — chỉ người tạo mới thao tác được, do RLS quyết định.
 - **Đếm lượt AI còn lại** — Gemini không hề báo còn bao nhiêu lượt, chỉ trả lỗi `429` khi đã hết, nên app tự đếm mỗi lần gọi vào một bảng dùng chung và hiện thanh tiến độ ở trang Cài đặt. Ngày được tính theo **giờ Pacific** — đúng lúc Google reset hạn mức — chứ không theo ngày UTC của cơ sở dữ liệu.
+- **Phân biệt hai loại `429`** — cùng một mã lỗi nhưng là hai chuyện khác hẳn: chạm trần **15 lượt/phút** (chờ vài chục giây là xong, và một lượt 5 ảnh chạm tới nó sau ba lần) hay hết **500 lượt/ngày** (phải đợi reset). App đọc `quotaId` trong phần `details` để nói đúng việc cần làm, kèm số giây chờ lấy từ `RetryInfo`.
 - **Hướng dẫn sử dụng** — popup 4 bước cho lần mở app đầu tiên, cộng một trang hướng dẫn đầy đủ tại [`/huong-dan.html`](public/huong-dan.html) mở được cả khi chưa đăng nhập.
 
 ## Công nghệ
