@@ -14,6 +14,12 @@ const nextConfig = {
         source: '/manifest.webmanifest',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }],
       },
+      {
+        // Browsers already re-check a service worker at most every 24h; this
+        // pins it to every load so a logic fix here reaches phones same-day.
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }],
+      },
     ];
   },
 };

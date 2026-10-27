@@ -1,5 +1,6 @@
 import BudgetForm, { type BudgetRow } from '@/components/settings/BudgetForm';
 import ProfileForm from '@/components/settings/ProfileForm';
+import PushSettings from '@/components/settings/PushSettings';
 import { signOutAction } from './actions';
 import { createClient, readSessionFast } from '@/lib/supabase/server';
 import { monthRange } from '@/lib/formatters';
@@ -16,7 +17,7 @@ export default async function SettingsPage() {
   const session = await readSessionFast();
   const { from, to } = monthRange();
 
-  const [profileResult, walletsResult, categoriesResult, budgetsResult, spendResult, aiResult] =
+  const [profileResult, walletsResult, categoriesResult, budgetsResult, spendResult, aiResult, notifResult] =
     await Promise.all([
       supabase.from('profiles').select('*').eq('id', session.id ?? '').maybeSingle(),
       supabase.from('wallets').select('id,name,type').order('type').order('name'),
@@ -29,6 +30,11 @@ export default async function SettingsPage() {
         .gte('occurred_at', from)
         .lte('occurred_at', to),
       supabase.rpc('ai_usage_today').maybeSingle(),
+      supabase
+        .from('notification_preferences')
+        .select('enabled,remind_hour')
+        .eq('user_id', session.id ?? '')
+        .maybeSingle(),
     ]);
 
   const profile = profileResult.data as Profile | null;
@@ -69,6 +75,7 @@ export default async function SettingsPage() {
   // Absent until the project has run the latest schema.sql, in which case the
   // card simply does not appear rather than the whole page failing.
   const ai = aiResult.data as { calls: number; resets_at: string } | null;
+  const notif = notifResult.data as { enabled: boolean; remind_hour: number } | null;
 
   return (
     <div className="space-y-4 py-4">
@@ -79,6 +86,13 @@ export default async function SettingsPage() {
       <BudgetForm wallets={wallets} categories={categories} rows={rows} />
 
       {ai && <AiQuotaCard used={Number(ai.calls)} resetsAt={ai.resets_at} />}
+
+      {!notifResult.error && (
+        <PushSettings
+          initialEnabled={notif?.enabled ?? false}
+          initialHour={notif?.remind_hour ?? 20}
+        />
+      )}
 
       <a
         href="/huong-dan.html"

@@ -132,6 +132,31 @@ create table if not exists public.ai_usage (
   calls int not null default 0
 );
 
+-- One push endpoint per device the household has said yes to. A phone that
+-- re-installs the PWA gets a new endpoint, so old ones are pruned by the
+-- sender itself when the push service reports them gone (404/410), not here.
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+
+-- One reminder a day, at an hour the person picked. last_sent_on is the
+-- dedupe guard: Vercel's own docs say a hourly cron job can fire anywhere in
+-- that hour, so without this a slow invocation could in principle overlap the
+-- next one and double-send.
+create table if not exists public.notification_preferences (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  enabled boolean not null default false,
+  remind_hour int not null default 20 check (remind_hour between 0 and 23),
+  last_sent_on date
+);
+
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
   wallet_id uuid not null references public.wallets (id) on delete cascade,
@@ -238,6 +263,8 @@ alter table public.categories enable row level security;
 alter table public.transactions enable row level security;
 alter table public.budgets enable row level security;
 alter table public.ai_usage enable row level security;
+alter table public.push_subscriptions enable row level security;
+alter table public.notification_preferences enable row level security;
 
 -- Profiles: the four household members can see each other (shared-wallet rows
 -- show who added them), but only edit themselves.
@@ -307,6 +334,17 @@ create policy transactions_delete_own on public.transactions
 drop policy if exists ai_usage_select on public.ai_usage;
 create policy ai_usage_select on public.ai_usage
   for select to authenticated using (true);
+
+-- Push subscriptions and the reminder hour are private to each person: nobody
+-- else in the household needs to read, let alone write, how or when another
+-- member gets nudged.
+drop policy if exists push_subscriptions_own on public.push_subscriptions;
+create policy push_subscriptions_own on public.push_subscriptions
+  for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists notification_preferences_own on public.notification_preferences;
+create policy notification_preferences_own on public.notification_preferences
+  for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- Budgets follow wallet access; the shared budget is set collaboratively.
 drop policy if exists budgets_select on public.budgets;

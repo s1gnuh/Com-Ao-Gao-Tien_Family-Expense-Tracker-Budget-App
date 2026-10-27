@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { readStoredSession } from '@/lib/auth';
 
 type CookiesToSet = { name: string; value: string; options: CookieOptions }[];
@@ -34,6 +35,21 @@ export async function getSessionUser() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   return data.user;
+}
+
+/**
+ * Bypasses RLS entirely. There is exactly one caller: the cron route that sends
+ * reminders to the whole household and has no signed-in user to scope queries
+ * to. Never import this into anything a request from the browser can reach —
+ * every other read or write in the app goes through createClient() instead, so
+ * a person's own login still decides what they can touch.
+ */
+export function createServiceClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
 }
 
 /**

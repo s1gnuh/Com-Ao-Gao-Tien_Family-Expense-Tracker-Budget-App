@@ -119,7 +119,11 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // huong-dan.html is the user guide: a static help page that should open even
   // for someone who is not signed in, so it never reaches the redirect above.
+  // sw.js has to stay reachable the same way — a browser registering or
+  // re-checking the service worker never carries a session, and a login
+  // redirect there isn't a page navigation the browser will follow: it just
+  // fails the registration outright ("script resource is behind a redirect").
   matcher: [
-    '/((?!_next/static|_next/image|icons|brand|favicon.ico|manifest.webmanifest|huong-dan.html|.*\\.png$).*)',
+    '/((?!_next/static|_next/image|icons|brand|favicon.ico|manifest.webmanifest|huong-dan.html|sw.js|.*\\.png$).*)',
   ],
 };

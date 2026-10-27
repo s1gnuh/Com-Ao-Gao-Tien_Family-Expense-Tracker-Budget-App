@@ -41,6 +41,7 @@ Một cuốn sổ chi tiêu chung cho đúng **bốn người trong một nhà**
 - **Đếm lượt AI còn lại** — Gemini không hề báo còn bao nhiêu lượt, chỉ trả lỗi `429` khi đã hết, nên app tự đếm mỗi lần gọi vào một bảng dùng chung và hiện thanh tiến độ ở trang Cài đặt. Ngày được tính theo **giờ Pacific** — đúng lúc Google reset hạn mức — chứ không theo ngày UTC của cơ sở dữ liệu.
 - **Phân biệt hai loại `429`** — cùng một mã lỗi nhưng là hai chuyện khác hẳn: chạm trần **15 lượt/phút** (chờ vài chục giây là xong, và một lượt 5 ảnh chạm tới nó sau ba lần) hay hết **500 lượt/ngày** (phải đợi reset). App đọc `quotaId` trong phần `details` để nói đúng việc cần làm, kèm số giây chờ lấy từ `RetryInfo`.
 - **Hướng dẫn sử dụng** — popup 4 bước cho lần mở app đầu tiên, cộng một trang hướng dẫn đầy đủ tại [`/huong-dan.html`](public/huong-dan.html) mở được cả khi chưa đăng nhập.
+- **Nhắc nhở cuối ngày bằng thông báo đẩy** — mỗi người tự chọn một giờ trong ngày (theo giờ tròn) để nhận thông báo, kèm số dư từng ví mình xem được ngay trong nội dung. Nếu hôm đó đã ghi ít nhất một khoản thì tiêu đề đổi thành "Tổng kết" thay vì nhắc nhở. Có nút **Gửi thử thông báo** riêng trong Cài đặt để xem trước và kiểm tra thiết bị đã đăng ký đúng chưa. Chạy trên Web Push chuẩn (không phụ thuộc dịch vụ ngoài nào có phí) — trên iOS bắt buộc phải **thêm app vào Màn hình chính** trước, đúng giới hạn của Safari.
 
 ## Công nghệ
 
@@ -76,11 +77,20 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<publishable key>
 GEMINI_API_KEY=<khoá từ Google AI Studio>
 GEMINI_MODEL=gemini-3.1-flash-lite
 GEMINI_DAILY_LIMIT=500
+SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=<xem bên dưới>
+VAPID_PRIVATE_KEY=<xem bên dưới>
+VAPID_SUBJECT=mailto:ban@example.com
+CRON_SECRET=<chuỗi ngẫu nhiên tự chọn>
 ```
 
 > `GEMINI_DAILY_LIMIT` chỉ là con số trang **Cài đặt** lấy làm mốc so sánh, không phải hạn mức thật. Google thay đổi hạn mức gói miễn phí nhiều lần và API **không bao giờ trả về số lượt còn lại**, nên hãy đọc con số thật trong project của bạn (Google AI Studio, hoặc Cloud Console → Generative Language API → Quotas) rồi điền vào đây.
 
 > `NEXT_PUBLIC_SUPABASE_URL` chỉ là tên miền gốc. **Không** thêm `/rest/v1/` — thư viện tự nối đường dẫn, thừa hậu tố là mọi truy vấn đều hỏng.
+
+> `SUPABASE_SERVICE_ROLE_KEY` lấy ở **Project Settings → API**, cạnh `anon key`. Chỉ route gửi thông báo nhắc nhở dùng, không bao giờ lộ ra máy khách.
+
+> Sinh cặp khoá VAPID bằng `npx web-push generate-vapid-keys`. `CRON_SECRET` tự chọn một chuỗi ngẫu nhiên (ví dụ `openssl rand -hex 32`) — một khi biến này tồn tại, Vercel tự gắn nó vào header `Authorization` của mọi Cron Job, không cần cấu hình thêm gì.
 
 ### 3. Chạy
 
@@ -93,7 +103,9 @@ Mở `http://localhost:3000`, bấm tab **Đăng ký** để tạo tài khoản 
 
 ### 4. Đưa lên Vercel
 
-Import repo, điền bốn biến môi trường ở trên. Lưu ý **tick đủ cả ba môi trường** Production / Preview / Development — biến `NEXT_PUBLIC_*` được nhúng cứng lúc build, nên sửa xong phải **Redeploy** mới có hiệu lực.
+Import repo, điền các biến môi trường ở trên. Lưu ý **tick đủ cả ba môi trường** Production / Preview / Development — biến `NEXT_PUBLIC_*` được nhúng cứng lúc build, nên sửa xong phải **Redeploy** mới có hiệu lực.
+
+File [`vercel.json`](vercel.json) đã khai sẵn 24 Cron Job (mỗi giờ UTC một job, tất cả gọi chung route gửi nhắc nhở) — không cần tạo gì thêm trên dashboard, chỉ cần `CRON_SECRET` đã điền ở bước trên. Gói Hobby miễn phí giới hạn mỗi Cron Job chạy **tối đa 1 lần/ngày**, nên thay vì một job chạy mỗi giờ (không được phép), có 24 job riêng biệt — mỗi job vẫn đúng "1 lần/ngày" theo luật, nhưng cộng lại phủ đủ 24 giờ. Route tự tính giờ Việt Nam thật tại thời điểm được gọi, nên không phụ thuộc Vercel gọi đúng phút.
 
 ## Cách đăng nhập hoạt động
 
@@ -110,6 +122,8 @@ Phiên đăng nhập lưu trong cookie với hạn **400 ngày** (mức tối đ
 - **Thẻ vuốt không đi qua React.** Mỗi lần ngón tay nhúc nhích mà gọi `setState` là một lần render lại cả chồng thẻ. Thay vào đó cử chỉ ghi thẳng `transform` vào DOM qua `ref` và không đọc bất kỳ thuộc tính layout nào, nên trình duyệt chỉ việc hợp thành (composite). Đo trên 200 sự kiện `pointermove` với CPU bị bóp 4 lần: **0 lần reflow**, không có tác vụ dài, ~1,2 ms kịch bản mỗi sự kiện.
 - **Số dư tính bằng view trong Postgres**, không cộng ở máy khách — nếu không, mỗi lần mở app điện thoại phải tải về toàn bộ lịch sử giao dịch chỉ để cộng lại.
 - **Middleware không gọi `getUser()`** ở mỗi request. Đó là một vòng mạng 300–400ms trước khi trang kịp render. Nó đọc hạn dùng ngay trong cookie, chỉ liên lạc với Supabase khi token sắp hết hạn. Bảo mật vẫn do RLS đảm nhiệm ở từng truy vấn.
+- **24 Cron Job thay vì một job chạy mỗi giờ.** Gói Hobby của Vercel chỉ cho mỗi Cron Job chạy tối đa 1 lần/ngày — không có lựa chọn "mỗi giờ" ở mức miễn phí. Khai 24 job cố định, mỗi job đúng một giờ UTC, đều gọi chung một route: cộng lại thành độ phân giải theo giờ mà không vi phạm giới hạn, không cần Supabase `pg_cron`/`pg_net` (chưa chắc có sẵn tuỳ dự án) hay dịch vụ cron ngoài nào có phí.
+- **Thông báo đẩy dùng khoá riêng của ứng dụng (VAPID), không qua Firebase hay OneSignal.** `web-push` ký gói tin bằng cặp khoá tự sinh, gửi thẳng tới endpoint mà trình duyệt cấp — không dịch vụ trung gian nào biết nội dung thông báo, và không giới hạn số lượt theo gói miễn phí của ai khác ngoài chính trình duyệt/push service của hệ điều hành.
 
 ## Cấu trúc thư mục
 
@@ -118,14 +132,19 @@ app/
   (auth)/login/        đăng nhập + đăng ký
   (dashboard)/         5 tab chính, có thanh điều hướng dưới
   api/ai/parse-receipt/  gọi Gemini phía máy chủ
+  api/cron/push-reminders/  Vercel Cron gọi mỗi giờ, gửi nhắc nhở ai đến lượt
 components/
   bills/ dashboard/ settings/ transactions/ wallets/ ui/
 lib/
   bills.ts             tính trạng thái hoá đơn theo chu kỳ
   formatters.ts        tiền VND, ngày, và đọc "35k" / "1tr2"
   gemini.ts            prompt + schema cho AI
+  push.ts              gửi Web Push, dựng nội dung nhắc nhở (dùng chung cron + nút test)
+  push-client.ts        phần việc chỉ chạy được ở trình duyệt (khoá VAPID, phát hiện đã cài app)
   supabase/            client cho trình duyệt và máy chủ
+public/sw.js           service worker: nhận push, mở app khi chạm thông báo
 supabase/schema.sql    toàn bộ bảng, RLS, view và hàm
+vercel.json             24 Cron Job gửi nhắc nhở
 ```
 
 ## Giới hạn đã biết

@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { buildReminderPayload, sendPush, type WalletBalanceRow } from '@/lib/push';
+import { todayInput } from '@/lib/formatters';
 
 export interface ActionState {
   error: string | null;
@@ -101,6 +103,123 @@ export async function saveBudgets(
 
   revalidatePath('/settings');
   revalidatePath('/');
+  return { error: null, ok: true };
+}
+
+interface BrowserSubscription {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+/** Called right after the browser grants permission and subscribes. */
+export async function savePushSubscription(subscription: BrowserSubscription): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+
+  if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+    return { error: 'Đăng ký thông báo không hợp lệ.', ok: false };
+  }
+
+  const { error } = await supabase.from('push_subscriptions').upsert(
+    {
+      user_id: auth.user.id,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+    },
+    { onConflict: 'endpoint' },
+  );
+
+  if (error) return { error: 'Không lưu được đăng ký thông báo.', ok: false };
+  return { error: null, ok: true };
+}
+
+/** Called when the toggle is switched off, so the push service stops being billed for it. */
+export async function removePushSubscription(endpoint: string): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+
+  const { error } = await supabase
+    .from('push_subscriptions')
+    .delete()
+    .eq('user_id', auth.user.id)
+    .eq('endpoint', endpoint);
+
+  if (error) return { error: 'Không xoá được đăng ký thông báo.', ok: false };
+  return { error: null, ok: true };
+}
+
+export async function updateNotificationPrefs(
+  enabled: boolean,
+  remindHour: number,
+): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+
+  if (!Number.isInteger(remindHour) || remindHour < 0 || remindHour > 23) {
+    return { error: 'Giờ nhắc không hợp lệ.', ok: false };
+  }
+
+  const { error } = await supabase
+    .from('notification_preferences')
+    .upsert({ user_id: auth.user.id, enabled, remind_hour: remindHour }, { onConflict: 'user_id' });
+
+  if (error) return { error: 'Không lưu được cài đặt nhắc nhở.', ok: false };
+
+  revalidatePath('/settings');
+  return { error: null, ok: true };
+}
+
+/**
+ * Sends one real push to every device this person has registered, built from
+ * their own current balances — an honest preview of the daily reminder, not a
+ * placeholder, which is also the easiest way to prove the whole chain works
+ * end to end on their actual phone.
+ */
+export async function sendTestNotification(): Promise<ActionState> {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+
+  const [subsResult, walletsResult, todayResult] = await Promise.all([
+    supabase.from('push_subscriptions').select('id,endpoint,p256dh,auth').eq('user_id', auth.user.id),
+    // RLS already limits this to the caller's own wallet plus the shared one.
+    supabase.from('wallet_balances').select('name,type,balance').eq('is_archived', false),
+    supabase
+      .from('transactions')
+      .select('id')
+      .eq('created_by', auth.user.id)
+      .eq('occurred_at', todayInput())
+      .limit(1),
+  ]);
+
+  const subs = subsResult.data ?? [];
+  if (subs.length === 0) {
+    return { error: 'Chưa bật nhận thông báo trên thiết bị này.', ok: false };
+  }
+
+  const wallets = (walletsResult.data ?? []) as WalletBalanceRow[];
+  const payload = buildReminderPayload(wallets, (todayResult.data?.length ?? 0) > 0);
+  payload.title = `🔔 Thử: ${payload.title}`;
+
+  const results = await Promise.all(subs.map((sub) => sendPush(sub, payload)));
+
+  const gone = subs.filter((_, index) => results[index] === 'gone').map((sub) => sub.id);
+  if (gone.length > 0) await supabase.from('push_subscriptions').delete().in('id', gone);
+
+  if (results.every((outcome) => outcome !== 'sent')) {
+    return {
+      error:
+        gone.length > 0
+          ? 'Thiết bị đã huỷ nhận thông báo, hãy bật lại.'
+          : 'Gửi thông báo thất bại, thử lại sau.',
+      ok: false,
+    };
+  }
+
   return { error: null, ok: true };
 }
 
