@@ -5,7 +5,7 @@ import CashFlowChart, { type CashFlowPoint } from '@/components/dashboard/CashFl
 import RefreshButton from '@/components/ui/RefreshButton';
 import { createClient } from '@/lib/supabase/server';
 import { describeBill, sortBills } from '@/lib/bills';
-import { formatMonth, formatVND } from '@/lib/formatters';
+import { formatMonth, formatVND, householdParts } from '@/lib/formatters';
 import type { RecurringBill, Wallet } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -15,6 +15,7 @@ interface WalletBalance {
   name: string;
   type: Wallet['type'];
   owner_id: string | null;
+  is_archived: boolean;
   balance: number;
 }
 
@@ -25,14 +26,17 @@ interface MonthSlot {
   chi: number;
 }
 
-/** Six slots ending with the current month, oldest first. */
-function buildMonthSlots(now: Date): MonthSlot[] {
+/**
+ * Six slots ending with the household's current month, oldest first. Stepped
+ * through Date.UTC so the zone this renders in cannot move the boundary.
+ */
+function buildMonthSlots(year: number, month: number): MonthSlot[] {
   const slots: MonthSlot[] = [];
   for (let offset = 5; offset >= 0; offset -= 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const date = new Date(Date.UTC(year, month - 1 - offset, 1));
     slots.push({
-      key: `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}`,
-      label: `T${date.getMonth() + 1}`,
+      key: `${date.getUTCFullYear()}-${`${date.getUTCMonth() + 1}`.padStart(2, '0')}`,
+      label: `T${date.getUTCMonth() + 1}`,
       thu: 0,
       chi: 0,
     });
@@ -42,10 +46,12 @@ function buildMonthSlots(now: Date): MonthSlot[] {
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const now = new Date();
+  const { year, month } = householdParts();
+  // Noon keeps the label on the right month in any zone the server may run in.
+  const monthAnchor = new Date(Date.UTC(year, month - 1, 1, 12));
 
   const [balancesResult, cashflowResult, billsResult] = await Promise.all([
-    supabase.from('wallet_balances').select('wallet_id,name,type,owner_id,balance'),
+    supabase.from('wallet_balances').select('wallet_id,name,type,owner_id,is_archived,balance'),
     // Aggregated in Postgres: six rows back instead of six months of transactions.
     supabase.rpc('monthly_cashflow', { p_months: 6 }),
     supabase.from('recurring_bills').select('*').eq('is_active', true),
@@ -77,7 +83,7 @@ export default async function DashboardPage() {
     expense: number;
   }[];
 
-  const slots = buildMonthSlots(now);
+  const slots = buildMonthSlots(year, month);
   const byKey = new Map(slots.map((slot) => [slot.key, slot]));
 
   for (const row of cashflow) {
@@ -88,7 +94,11 @@ export default async function DashboardPage() {
   }
 
   const current = slots[slots.length - 1]!;
-  const totalBalance = balances.reduce((sum, row) => sum + Number(row.balance), 0);
+  // Archived wallets are left out here exactly as they are on Ví & Quỹ, which
+  // shows them in their own section. Counting them in one total and not the
+  // other is how the two screens came to disagree.
+  const live = balances.filter((row) => !row.is_archived);
+  const totalBalance = live.reduce((sum, row) => sum + Number(row.balance), 0);
   const chartData: CashFlowPoint[] = slots.map(({ label, thu, chi }) => ({ label, thu, chi }));
 
   // A missing recurring_bills table just means the badge stays quiet.
@@ -112,7 +122,7 @@ export default async function DashboardPage() {
           className="h-12 w-auto shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-sm capitalize text-muted">{formatMonth(now)}</p>
+          <p className="text-sm capitalize text-muted">{formatMonth(monthAnchor)}</p>
           <h1 className="text-2xl font-semibold leading-tight">Tổng quan</h1>
         </div>
         <RefreshButton />
@@ -149,18 +159,18 @@ export default async function DashboardPage() {
         balance={totalBalance}
         income={current.thu}
         expense={current.chi}
-        monthLabel={`T${now.getMonth() + 1}`}
+        monthLabel={`T${month}`}
       />
 
       <CashFlowChart data={chartData} />
 
       <section className="card" aria-label="Số dư từng ví">
         <h2 className="mb-3 text-sm font-medium">Ví & Quỹ</h2>
-        {balances.length === 0 ? (
+        {live.length === 0 ? (
           <p className="text-sm text-muted">Chưa có ví nào.</p>
         ) : (
           <ul className="space-y-2">
-            {balances
+            {live
               .slice()
               .sort((a, b) => (a.type === b.type ? 0 : a.type === 'shared' ? -1 : 1))
               .map((wallet) => (

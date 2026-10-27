@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient, readSessionFast } from '@/lib/supabase/server';
-import { toDateInput } from '@/lib/formatters';
+import { todayInput } from '@/lib/formatters';
 import type { BillCycle } from '@/types';
 
 export interface BillState {
@@ -124,7 +124,7 @@ export async function markBillPaid(_previous: BillState, formData: FormData): Pr
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('recurring_bills')
-    .update({ last_paid_on: toDateInput() })
+    .update({ last_paid_on: todayInput() })
     .eq('id', id)
     .select('id');
 

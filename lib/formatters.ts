@@ -65,9 +65,54 @@ export function parseAmountInput(raw: string): number | null {
   return Number(digits);
 }
 
-const dateLong = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-const dateShort = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit' });
-const monthLabel = new Intl.DateTimeFormat('vi-VN', { month: 'long', year: 'numeric' });
+/**
+ * The household lives in one timezone. Vercel runs its functions in UTC and
+ * Supabase stores in UTC, so without pinning this, every "today" and "this
+ * month" worked out on the server is a day behind between midnight and 7am —
+ * and a whole month behind on the first of the month, which is exactly when the
+ * overview is being read.
+ */
+export const HOUSEHOLD_TZ = 'Asia/Ho_Chi_Minh';
+
+// en-CA renders as YYYY-MM-DD, the shape a Postgres `date` column takes.
+const ymd = new Intl.DateTimeFormat('en-CA', {
+  timeZone: HOUSEHOLD_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** Today as the household's calendar reads it, wherever this code runs. */
+export function todayInput(at: Date = new Date()): string {
+  return ymd.format(at);
+}
+
+/** The household's civil date, split up for month arithmetic. */
+export function householdParts(at: Date = new Date()): {
+  year: number;
+  month: number;
+  day: number;
+} {
+  const [year, month, day] = todayInput(at).split('-').map(Number);
+  return { year: year!, month: month!, day: day! };
+}
+
+const dateLong = new Intl.DateTimeFormat('vi-VN', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: HOUSEHOLD_TZ,
+});
+const dateShort = new Intl.DateTimeFormat('vi-VN', {
+  day: '2-digit',
+  month: '2-digit',
+  timeZone: HOUSEHOLD_TZ,
+});
+const monthLabel = new Intl.DateTimeFormat('vi-VN', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: HOUSEHOLD_TZ,
+});
 
 export function formatDate(value: string | Date): string {
   return dateLong.format(toDate(value));
@@ -83,7 +128,10 @@ export function formatMonth(value: string | Date): string {
 
 export function formatRelativeDate(value: string | Date): string {
   const target = startOfDay(toDate(value));
-  const diffDays = Math.round((startOfDay(new Date()).getTime() - target.getTime()) / 86_400_000);
+  const today = householdParts();
+  const diffDays = Math.round(
+    (new Date(today.year, today.month - 1, today.day).getTime() - target.getTime()) / 86_400_000,
+  );
   if (diffDays === 0) return 'Hôm nay';
   if (diffDays === 1) return 'Hôm qua';
   if (diffDays === -1) return 'Ngày mai';
@@ -100,15 +148,22 @@ export function toDateInput(value: string | Date = new Date()): string {
 }
 
 export function monthRange(reference: Date = new Date()): { from: string; to: string } {
-  const from = new Date(reference.getFullYear(), reference.getMonth(), 1);
-  const to = new Date(reference.getFullYear(), reference.getMonth() + 1, 0);
-  return { from: toDateInput(from), to: toDateInput(to) };
+  const { year, month } = householdParts(reference);
+  // Day 0 of the next month is the last day of this one. Built through Date.UTC
+  // so the zone the server happens to run in cannot shift the boundary.
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const pad = (value: number) => `${value}`.padStart(2, '0');
+
+  return { from: `${year}-${pad(month)}-01`, to: `${year}-${pad(month)}-${pad(lastDay)}` };
 }
 
 function toDate(value: string | Date): Date {
   if (value instanceof Date) return value;
-  // Bare `YYYY-MM-DD` parses as UTC midnight, which shifts a day in UTC+7.
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  // A bare `YYYY-MM-DD` is a civil date, not an instant. Anchoring it at noon
+  // UTC puts it half a day from either edge, so neither the household's +7 nor
+  // a server running in UTC can read it as the day before or after. Midnight —
+  // UTC's or the server's — is one timezone away from being the wrong date.
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00Z`) : new Date(value);
 }
 
 function startOfDay(date: Date): Date {

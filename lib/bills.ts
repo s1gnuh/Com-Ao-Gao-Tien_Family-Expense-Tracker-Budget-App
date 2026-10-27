@@ -1,4 +1,4 @@
-import { toDateInput } from '@/lib/formatters';
+import { householdParts, toDateInput } from '@/lib/formatters';
 import type { BillStatus, BillWithStatus, RecurringBill } from '@/types';
 
 /** A bill counts as "sắp đến hạn" inside this window. */
@@ -42,16 +42,16 @@ function occurrencesAround(bill: RecurringBill, today: Date): { last: Date; next
 }
 
 export function describeBill(bill: RecurringBill, now = new Date()): BillWithStatus {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Which day it is has to be the household's answer, not the server's: this
+  // runs in a Server Component, where "today" would otherwise be the UTC date
+  // and every bill would read a day early from midnight to 7am.
+  const stamp = householdParts(now);
+  const today = new Date(stamp.year, stamp.month - 1, stamp.day);
   const { last, next } = occurrencesAround(bill, today);
 
   const paidOn = bill.last_paid_on ? new Date(`${bill.last_paid_on}T00:00:00`) : null;
-  const createdOn = new Date(bill.created_at);
-  const createdDay = new Date(
-    createdOn.getFullYear(),
-    createdOn.getMonth(),
-    createdOn.getDate(),
-  );
+  const born = householdParts(new Date(bill.created_at));
+  const createdDay = new Date(born.year, born.month - 1, born.day);
 
   // A due date that fell before the bill was ever entered was never owed, so a
   // bill added today is not born overdue.

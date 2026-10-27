@@ -1,6 +1,6 @@
 import TransactionCalendar, { type DayTotal } from '@/components/transactions/TransactionCalendar';
 import { createClient, readSessionFast } from '@/lib/supabase/server';
-import { formatMonth, toDateInput } from '@/lib/formatters';
+import { formatMonth, householdParts, toDateInput } from '@/lib/formatters';
 import type { TransactionWithRelations, Wallet } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -12,15 +12,20 @@ function monthKey(date: Date): string {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}`;
 }
 
+/** Which month to open on: the household's, not the server's. */
+function currentMonthKey(): string {
+  const { year, month } = householdParts();
+  return `${year}-${`${month}`.padStart(2, '0')}`;
+}
+
 export default async function TransactionsPage({
   searchParams,
 }: {
   searchParams: Promise<{ m?: string }>;
 }) {
   const params = await searchParams;
-  const now = new Date();
 
-  const requested = params.m && MONTH_PARAM.test(params.m) ? params.m : monthKey(now);
+  const requested = params.m && MONTH_PARAM.test(params.m) ? params.m : currentMonthKey();
   const [yearText, monthText] = requested.split('-');
   const year = Number(yearText);
   const month = Number(monthText) - 1;

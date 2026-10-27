@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import TransactionCard from './TransactionCard';
-import { formatCompactVND, formatDate, formatVND, toDateInput } from '@/lib/formatters';
+import { formatCompactVND, formatDate, formatVND, todayInput } from '@/lib/formatters';
 import type { TransactionWithRelations } from '@/types';
 
 export interface DayTotal {
@@ -46,7 +46,7 @@ export default function TransactionCalendar({
   );
 
   const cells = useMemo(() => buildCells(monthStart), [monthStart]);
-  const today = toDateInput();
+  const today = todayInput();
 
   const monthIncome = dailyTotals.reduce((sum, day) => sum + Number(day.income), 0);
   const monthExpense = dailyTotals.reduce((sum, day) => sum + Number(day.expense), 0);

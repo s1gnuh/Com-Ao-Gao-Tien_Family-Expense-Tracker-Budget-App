@@ -7,6 +7,22 @@ do $$ begin create type wallet_type as enum ('personal', 'shared'); exception wh
 do $$ begin create type category_kind as enum ('fixed', 'variable'); exception when duplicate_object then null; end $$;
 do $$ begin create type transaction_type as enum ('income', 'expense'); exception when duplicate_object then null; end $$;
 
+-- ------------------------------------------------------------- the calendar
+
+-- The household's own day. Supabase runs in UTC, so current_date rolls over at
+-- 7am local time: between midnight and 7am every "today" would be yesterday's,
+-- and on the first of the month every "this month" window would still be last
+-- month's — exactly when the overview is being read. Defined before the tables
+-- because a column default below depends on it.
+create or replace function public.household_today()
+returns date
+language sql
+stable
+set search_path = public
+as $$
+  select (now() at time zone 'Asia/Ho_Chi_Minh')::date;
+$$;
+
 -- ---------------------------------------------------------------- tables
 
 create table if not exists public.profiles (
@@ -68,6 +84,10 @@ create table if not exists public.transactions (
 );
 
 alter table public.transactions add column if not exists receipt_hash text;
+
+-- The app always sends a date, but should a row ever arrive without one it must
+-- land on the household's day, not the database's UTC one.
+alter table public.transactions alter column occurred_at set default public.household_today();
 
 create index if not exists transactions_wallet_date_idx on public.transactions (wallet_id, occurred_at desc);
 create index if not exists transactions_category_idx on public.transactions (category_id);
@@ -366,7 +386,7 @@ as $$
     coalesce(sum(t.amount) filter (where t.type = 'income'), 0),
     coalesce(sum(t.amount) filter (where t.type = 'expense'), 0)
   from public.transactions t
-  where t.occurred_at >= (date_trunc('month', current_date) - make_interval(months => greatest(p_months, 1) - 1))::date
+  where t.occurred_at >= (date_trunc('month', public.household_today()) - make_interval(months => greatest(p_months, 1) - 1))::date
     and (p_wallet is null or t.wallet_id = p_wallet)
   group by 1
   order by 1;

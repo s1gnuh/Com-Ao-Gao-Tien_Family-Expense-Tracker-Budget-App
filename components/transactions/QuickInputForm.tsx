@@ -7,7 +7,7 @@ import Toast, { type ToastTone } from '@/components/ui/Toast';
 import BatchReviewDeck, { type ReceiptDraft } from '@/components/transactions/BatchReviewDeck';
 import { downscaleImage, hashImage } from '@/lib/image';
 import { MAX_RECEIPT_BATCH } from '@/lib/receipts';
-import { formatDate, formatVND, parseAmountInput, toDateInput } from '@/lib/formatters';
+import { formatDate, formatVND, parseAmountInput, todayInput } from '@/lib/formatters';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
 import { updateTransaction } from '@/app/(dashboard)/transactions/[id]/actions';
 import type { ApiResult, Category, ParsedReceipt, TransactionType, Wallet } from '@/types';
@@ -61,7 +61,7 @@ export default function QuickInputForm({
   const [amountRaw, setAmountRaw] = useState(initial ? String(Math.round(initial.amount)) : '');
   const [categoryId, setCategoryId] = useState(initial?.category_id ?? '');
   const [note, setNote] = useState(initial?.note ?? '');
-  const [occurredAt, setOccurredAt] = useState(initial?.occurred_at ?? toDateInput());
+  const [occurredAt, setOccurredAt] = useState(initial?.occurred_at ?? todayInput());
   const [source, setSource] = useState<'manual' | 'ai_receipt'>('manual');
   const [receiptHash, setReceiptHash] = useState('');
 
@@ -222,7 +222,7 @@ export default function QuickInputForm({
           type: parsed.data.type,
           note: parsed.data.note ?? '',
           categoryId: matched?.id ?? '',
-          occurredAt: parsed.data.occurred_at ?? toDateInput(),
+          occurredAt: parsed.data.occurred_at ?? todayInput(),
           walletId,
           confidence: parsed.data.confidence,
         });
