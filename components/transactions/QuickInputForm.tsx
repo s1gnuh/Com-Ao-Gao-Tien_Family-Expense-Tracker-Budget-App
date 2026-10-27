@@ -4,7 +4,9 @@ import { useActionState, useMemo, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Toast, { type ToastTone } from '@/components/ui/Toast';
+import BatchReviewDeck, { type ReceiptDraft } from '@/components/transactions/BatchReviewDeck';
 import { downscaleImage, hashImage } from '@/lib/image';
+import { MAX_RECEIPT_BATCH } from '@/lib/receipts';
 import { formatDate, formatVND, parseAmountInput, toDateInput } from '@/lib/formatters';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
 import { updateTransaction } from '@/app/(dashboard)/transactions/[id]/actions';
@@ -65,6 +67,9 @@ export default function QuickInputForm({
 
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const [aiMessage, setAiMessage] = useState<string | null>(null);
+  /** Non-null once several images are read and waiting to be swiped through. */
+  const [batch, setBatch] = useState<{ drafts: ReceiptDraft[]; skipped: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [toast, setToast] = useState<{
     title: string;
     description: string;
@@ -134,6 +139,117 @@ export default function QuickInputForm({
     }
   }
 
+  /**
+   * Several photos in one go. Each image is its own request, so one unreadable
+   * picture cannot spoil the rest of the batch and the duplicate check still
+   * runs per image before any Gemini tokens are spent.
+   */
+  async function handleReceipts(files: File[]) {
+    const images = files.filter((file) => file.type.startsWith('image/'));
+
+    if (images.length === 0) {
+      setToast({
+        title: 'Ảnh không đúng định dạng',
+        description: 'Chỉ nhận ảnh JPG, PNG hoặc HEIC. Chọn lại giúp mình nhé.',
+      });
+      return;
+    }
+    if (images.length === 1) {
+      void handleReceipt(images[0]!);
+      return;
+    }
+
+    const tooMany = images.length > MAX_RECEIPT_BATCH;
+    const picked = images.slice(0, MAX_RECEIPT_BATCH);
+
+    setAiStatus('working');
+    setAiMessage(null);
+    setProgress({ done: 0, total: picked.length });
+
+    try {
+      // Decoded one at a time: five full-size iPhone photos on a canvas at once
+      // is more memory than iOS Safari reliably hands out.
+      const prepared: { hash: string; blob: Blob }[] = [];
+      for (const file of picked) {
+        const hash = await hashImage(file);
+        // The same photo picked twice would pass the server check, which only
+        // knows about bills already saved.
+        if (prepared.some((item) => item.hash === hash)) continue;
+        prepared.push({ hash, blob: await downscaleImage(file) });
+      }
+
+      const results = await Promise.all(
+        prepared.map(async (item) => {
+          const body = new FormData();
+          body.append('image', item.blob, 'receipt.jpg');
+          body.append('hash', item.hash);
+
+          try {
+            const response = await fetch('/api/ai/parse-receipt', { method: 'POST', body });
+            return { item, parsed: (await response.json()) as ParseResponse };
+          } catch {
+            return { item, parsed: { ok: false, error: 'Không gọi được máy chủ.' } as ParseResponse };
+          } finally {
+            setProgress((current) => (current ? { ...current, done: current.done + 1 } : current));
+          }
+        }),
+      );
+
+      const drafts: ReceiptDraft[] = [];
+      let skipped = images.length - prepared.length;
+
+      for (const { item, parsed } of results) {
+        if (!parsed.ok || parsed.data.amount === null) {
+          skipped += 1;
+          continue;
+        }
+
+        const matched = matchCategory(parsed.data.category_guess, categories);
+        drafts.push({
+          id: item.hash,
+          hash: item.hash,
+          blob: item.blob,
+          amount: parsed.data.amount,
+          type: parsed.data.type,
+          note: parsed.data.note ?? '',
+          categoryId: matched?.id ?? '',
+          occurredAt: parsed.data.occurred_at ?? toDateInput(),
+          walletId,
+          confidence: parsed.data.confidence,
+        });
+      }
+
+      setProgress(null);
+      setAiStatus('idle');
+
+      if (drafts.length === 0) {
+        setToast({
+          title: 'Không đọc được ảnh nào',
+          description:
+            'Có thể các ảnh đã nhập rồi, hoặc không phải hoá đơn. Thử ảnh khác hoặc nhập tay nhé.',
+        });
+        return;
+      }
+
+      if (tooMany || skipped > 0) {
+        setToast({
+          tone: 'info',
+          title: `Đọc được ${drafts.length} hoá đơn`,
+          description: tooMany
+            ? `Mỗi lượt chỉ đọc ${MAX_RECEIPT_BATCH} ảnh, nên ${images.length - MAX_RECEIPT_BATCH} ảnh cuối đã bị bỏ qua.`
+            : `${skipped} ảnh không đọc được hoặc đã nhập rồi.`,
+          note: 'Vuốt phải để duyệt, vuốt trái để sửa.',
+        });
+      }
+
+      setBatch({ drafts, skipped });
+    } catch {
+      setProgress(null);
+      setAiStatus('error');
+      setAiMessage('Không đọc được ảnh, thử chụp lại hoặc nhập tay.');
+    }
+  }
+
   function applyParsed(parsed: ParsedReceipt) {
     // The model reports a null amount when the picture is not a receipt at all,
     // which is worth interrupting for — an inline note under the button is easy
@@ -189,6 +305,7 @@ export default function QuickInputForm({
   }
 
   return (
+    <>
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="amount" value={amount ?? ''} />
       <input type="hidden" name="type" value={type} />
@@ -204,7 +321,8 @@ export default function QuickInputForm({
           <p className="text-sm font-medium">1. Tải hoá đơn lên</p>
           <p className="text-xs text-muted">
             AI điền sẵn số tiền, nội dung và ngày. Kéo xuống kiểm tra rồi lưu. Không có ảnh thì
-            nhập tay bên dưới cũng được.
+            nhập tay bên dưới cũng được. Chọn nhiều ảnh trong album (tối đa {MAX_RECEIPT_BATCH}) để
+            duyệt lần lượt bằng cách vuốt.
           </p>
         </div>
 
@@ -227,10 +345,11 @@ export default function QuickInputForm({
           ref={albumRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleReceipt(file);
+            const files = Array.from(event.target.files ?? []);
+            if (files.length > 0) void handleReceipts(files);
             event.target.value = '';
           }}
         />
@@ -256,7 +375,9 @@ export default function QuickInputForm({
 
         {aiStatus === 'working' && (
           <p role="status" className="text-center text-xs text-muted">
-            Đang đọc hoá đơn…
+            {progress
+              ? `Đang đọc ${progress.done}/${progress.total} ảnh…`
+              : 'Đang đọc hoá đơn…'}
           </p>
         )}
 
@@ -406,6 +527,19 @@ export default function QuickInputForm({
         />
       )}
     </form>
+
+    {/* Outside the form on purpose: its inputs would otherwise submit this one
+        the moment someone pressed Enter while editing a card. */}
+    {batch && (
+      <BatchReviewDeck
+        drafts={batch.drafts}
+        wallets={wallets}
+        categories={categories}
+        skipped={batch.skipped}
+        onCancel={() => setBatch(null)}
+      />
+    )}
+    </>
   );
 }
 

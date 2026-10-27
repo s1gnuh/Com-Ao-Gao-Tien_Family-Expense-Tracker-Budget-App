@@ -31,6 +31,7 @@ Một cuốn sổ chi tiêu chung cho đúng **bốn người trong một nhà**
 
 - **Ví cá nhân & quỹ gia đình** — tách bạch bằng Row Level Security ở tầng cơ sở dữ liệu, không phải bằng điều kiện trong code.
 - **Đọc hoá đơn bằng AI** — nhận cả hoá đơn giấy lẫn ảnh chụp màn hình biến động số dư. Hiểu dấu `+`/`−` để phân biệt thu/chi, và đọc đúng ngày kiểu `14/10/26`.
+- **Duyệt hàng loạt bằng cách vuốt** — chọn tối đa 5 ảnh một lượt, mỗi ảnh là một lời gọi riêng nên một tấm mờ không kéo đổ cả loạt. Kết quả hiện thành chồng thẻ kiểu Tinder: vuốt phải để duyệt, vuốt trái để sửa, rồi ghi tất cả bằng một lần `insert`.
 - **Chống nhập trùng** — mỗi ảnh được băm SHA-256 và đối chiếu **trước** khi gọi AI, nên ảnh đã tải lên rồi không tốn thêm token nào.
 - **Lịch giao dịch** — xem cả tháng, chạm vào ngày để lọc.
 - **Hoá đơn định kỳ** — tiền nhà, điện, nước, học phí… kèm trạng thái quá hạn / sắp đến hạn và cảnh báo ngay trang chủ.
@@ -100,6 +101,7 @@ Phiên đăng nhập lưu trong cookie với hạn **400 ngày** (mức tối đ
 - **Chỉ có giao diện sáng.** Nền `#FEFCF5` lấy trực tiếp từ pixel của file logo. Cam thương hiệu chỉ dùng làm nền, **không bao giờ làm màu chữ** — chữ trắng trên cam chỉ đạt 2,76:1, không đọc nổi. Logo vốn đã giải bài này bằng chữ nâu trên nền ấm (5,44:1).
 - **Màu biểu đồ là xanh dương/cam, không phải xanh lá/đỏ.** Trên nền tối, mọi cặp xanh lá/đỏ đều rớt xuống ΔE 2–5 với người mù màu đỏ-lục. Cặp đang dùng đạt ΔE 21,9. Riêng số tiền trong danh sách vẫn giữ xanh/đỏ vì ở đó dấu `+`/`−` mới là thứ mang nghĩa.
 - **Ẩn ví thay vì xoá.** Giao dịch bị xoá theo ví (`ON DELETE CASCADE`), nên xoá một ví đang dùng sẽ cuốn theo cả lịch sử. Ví rỗng thì xoá hẳn, ví có dữ liệu thì chỉ ẩn đi.
+- **Thẻ vuốt không đi qua React.** Mỗi lần ngón tay nhúc nhích mà gọi `setState` là một lần render lại cả chồng thẻ. Thay vào đó cử chỉ ghi thẳng `transform` vào DOM qua `ref` và không đọc bất kỳ thuộc tính layout nào, nên trình duyệt chỉ việc hợp thành (composite). Đo trên 200 sự kiện `pointermove` với CPU bị bóp 4 lần: **0 lần reflow**, không có tác vụ dài, ~0,94 ms kịch bản mỗi sự kiện.
 - **Số dư tính bằng view trong Postgres**, không cộng ở máy khách — nếu không, mỗi lần mở app điện thoại phải tải về toàn bộ lịch sử giao dịch chỉ để cộng lại.
 - **Middleware không gọi `getUser()`** ở mỗi request. Đó là một vòng mạng 300–400ms trước khi trang kịp render. Nó đọc hạn dùng ngay trong cookie, chỉ liên lạc với Supabase khi token sắp hết hạn. Bảo mật vẫn do RLS đảm nhiệm ở từng truy vấn.
 
