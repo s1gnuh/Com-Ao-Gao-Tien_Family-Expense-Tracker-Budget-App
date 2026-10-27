@@ -144,6 +144,9 @@
 
       footer { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0 0; }
 
+      /* touch-action skips the ~300ms double-tap-zoom delay Safari otherwise
+         waits out before firing the click, and the transition gives an
+         immediate press-down cue instead of the dead pause while it waits. */
       .back {
         display: inline-flex;
         align-items: center;
@@ -155,11 +158,45 @@
         font-weight: 600;
         text-decoration: none;
         border-radius: 16px;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 100ms ease, background-color 100ms ease;
+      }
+      .back:active {
+        background: var(--accent);
+        transform: scale(0.96);
+      }
+
+      .back-fab {
+        position: fixed;
+        top: calc(env(safe-area-inset-top) + 14px);
+        left: calc(env(safe-area-inset-left) + 16px);
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--fg);
+        font-size: 19px;
+        line-height: 1;
+        text-decoration: none;
+        box-shadow: 0 1px 2px rgb(71 24 6 / 0.06), 0 6px 16px rgb(71 24 6 / 0.1);
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 100ms ease, background-color 100ms ease;
+      }
+      .back-fab:active {
+        background: var(--bg);
+        transform: scale(0.92);
       }
     </style>
   </head>
 
   <body>
+    <a class="back-fab" href="/settings" aria-label="Quay lại app">←</a>
     <div class="wrap">
       <header>
         <img src="/brand/logo.png" alt="Cơm Áo Gạo Tiền" />

@@ -11,6 +11,13 @@ import { normalizeUsername, usernameToEmail, validateUsername } from '@/lib/auth
 
 type Mode = 'login' | 'register';
 
+/** A friendly default so most of the household never has to type the display
+ * name separately — "bo" becomes "Bo", still free to edit before submitting. */
+function suggestDisplayName(rawUsername: string): string {
+  const trimmed = rawUsername.trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1) : '';
+}
+
 /**
  * Accounts are keyed by a synthetic address built from the username, so
  * Supabase's email-flavoured errors have to be retold in username terms.
@@ -72,6 +79,9 @@ function AuthForm() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  // Stops the username -> display name sync the moment the person edits the
+  // display name themselves, so a deliberate choice is never overwritten.
+  const [displayNameEdited, setDisplayNameEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -212,7 +222,11 @@ function AuthForm() {
             placeholder="bo, me, ti, be…"
             hint="Chữ thường, số, dấu chấm hoặc gạch. Từ 3 ký tự."
             value={username}
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setUsername(value);
+              if (!displayNameEdited) setDisplayName(suggestDisplayName(value));
+            }}
           />
           <Input
             label="Tên hiển thị"
@@ -221,8 +235,12 @@ function AuthForm() {
             autoComplete="name"
             maxLength={40}
             placeholder="Bố, Mẹ, Tí, Bé…"
+            hint="Tự điền theo tên đăng nhập, sửa thoải mái."
             value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
+            onChange={(event) => {
+              setDisplayName(event.target.value);
+              setDisplayNameEdited(true);
+            }}
           />
           <Input
             label="Mật khẩu"
