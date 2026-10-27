@@ -218,8 +218,6 @@ export default function BatchReviewDeck({
     });
   }
 
-  const reviewed = drafts.length - live.length;
-
   // z-[45] sits above the bottom nav (z-40) but below a toast (z-50), so the
   // "only five images" warning stays readable over the deck it just opened.
   return (
@@ -241,7 +239,7 @@ export default function BatchReviewDeck({
         <div className="min-w-0 flex-1">
           <p className="font-semibold">Duyệt {drafts.length} hoá đơn</p>
           <p className="text-xs text-muted">
-            {reviewed}/{drafts.length} đã xem
+            {live.length > 0 ? `Còn ${live.length} chờ duyệt` : 'Đã xem hết'}
             {skipped > 0 ? ` · ${skipped} ảnh bỏ qua` : ''}
           </p>
         </div>
@@ -313,37 +311,65 @@ export default function BatchReviewDeck({
                           }
                   }
                 >
-                  <div className="relative min-h-0 flex-1 bg-bg">
+                  {/* A fixed share of the card rather than whatever is left:
+                      the rows below then keep the same rhythm no matter what
+                      shape the receipt photo is. */}
+                  <div className="relative h-[40%] shrink-0 bg-bg">
                     {previews[card.id] && (
                       <img
                         src={previews[card.id]}
                         alt=""
                         draggable={false}
-                        className="h-full w-full object-cover"
+                        // Anchored to the top: a receipt is taller than this
+                        // band, and its head carries the shop name, which is
+                        // what tells you which bill you are looking at.
+                        className="h-full w-full object-cover object-top"
                       />
                     )}
+
+                    <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-2">
+                      <span className="truncate rounded-full bg-surface/90 px-2.5 py-1 text-xs font-medium shadow-sm backdrop-blur-sm">
+                        {categoryLabel(card.categoryId, categories)}
+                      </span>
+                      <span className="tabular shrink-0 rounded-full bg-surface/90 px-2.5 py-1 text-xs font-medium text-muted shadow-sm backdrop-blur-sm">
+                        {drafts.findIndex((item) => item.id === card.id) + 1}/{drafts.length}
+                      </span>
+                    </div>
+
+                    {card.confidence < 0.6 && (
+                      <span className="pointer-events-none absolute inset-x-3 bottom-3 truncate rounded-full bg-surface/90 px-2.5 py-1 text-xs font-medium text-brand-strong shadow-sm backdrop-blur-sm">
+                        ⚠️ AI chưa chắc — soát kỹ số tiền
+                      </span>
+                    )}
+
                     <span
                       ref={isTop ? yesRef : undefined}
                       aria-hidden
                       style={{ opacity: 0 }}
-                      className="absolute left-4 top-4 rounded-xl border-2 border-income bg-surface/90 px-3 py-1 text-sm font-bold text-income"
+                      className="absolute left-5 top-1/2 -translate-y-1/2 -rotate-12 rounded-2xl border-4 border-income bg-surface/85 px-4 py-1.5 text-xl font-extrabold tracking-wide text-income"
                     >
-                      DUYỆT ✓
+                      DUYỆT
                     </span>
                     <span
                       ref={isTop ? noRef : undefined}
                       aria-hidden
                       style={{ opacity: 0 }}
-                      className="absolute right-4 top-4 rounded-xl border-2 border-brand bg-surface/90 px-3 py-1 text-sm font-bold text-brand-strong"
+                      className="absolute right-5 top-1/2 -translate-y-1/2 rotate-12 rounded-2xl border-4 border-brand bg-surface/85 px-4 py-1.5 text-xl font-extrabold tracking-wide text-brand-strong"
                     >
-                      ✏️ SỬA
+                      SỬA
                     </span>
                   </div>
 
-                  <div className="shrink-0 space-y-2 border-t border-border p-4">
-                    <div className="flex items-baseline gap-2">
+                  {/* Every row takes an equal share of the height that is left,
+                      so the card reads as full at any screen size instead of
+                      trailing off into blank space under the last line. */}
+                  <div className="flex min-h-0 flex-1 flex-col divide-y divide-border border-t border-border px-4">
+                    <div className="flex flex-[1.6] flex-col justify-center">
+                      <span className="text-xs text-muted">
+                        {card.type === 'income' ? 'Khoản thu' : 'Khoản chi'}
+                      </span>
                       <span
-                        className={`tabular text-3xl font-semibold ${
+                        className={`tabular text-[26px] font-semibold leading-tight ${
                           card.type === 'income' ? 'text-income' : 'text-expense'
                         }`}
                       >
@@ -352,25 +378,9 @@ export default function BatchReviewDeck({
                       </span>
                     </div>
 
-                    <p className="truncate text-sm">{card.note || 'Không có nội dung'}</p>
-
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                      <span className="rounded-full bg-bg px-2 py-1">
-                        {formatDate(card.occurredAt)}
-                      </span>
-                      <span className="rounded-full bg-bg px-2 py-1">
-                        {categoryLabel(card.categoryId, categories)}
-                      </span>
-                      <span className="rounded-full bg-bg px-2 py-1">
-                        {walletLabel(card.walletId, wallets)}
-                      </span>
-                    </div>
-
-                    {card.confidence < 0.6 && (
-                      <p className="rounded-xl bg-bg px-3 py-2 text-xs text-brand-strong">
-                        AI không chắc về ảnh này — soát kỹ số tiền trước khi duyệt.
-                      </p>
-                    )}
+                    <DetailRow label="Nội dung" value={card.note || 'Không có'} />
+                    <DetailRow label="Ngày" value={formatDate(card.occurredAt)} />
+                    <DetailRow label="Ví" value={walletLabel(card.walletId, wallets)} />
                   </div>
                 </div>
               );
@@ -674,6 +684,15 @@ function DraftEditor({
           Bỏ qua ảnh này
         </Button>
       </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-1 items-center justify-between gap-3">
+      <span className="shrink-0 text-xs text-muted">{label}</span>
+      <span className="truncate text-sm font-medium">{value}</span>
     </div>
   );
 }
