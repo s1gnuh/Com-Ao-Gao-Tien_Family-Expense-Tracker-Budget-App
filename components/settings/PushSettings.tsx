@@ -85,17 +85,22 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
     setBusy(true);
     setNote(null);
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready;
-
-      // Must follow directly from this tap — iOS only honours the permission
-      // prompt when it is a direct result of a user gesture.
+      // The very first await after the tap, before anything else — iOS Safari
+      // only treats this as a direct result of the user gesture up until the
+      // first promise it has to wait on actually takes real time. Registering
+      // the service worker first (serviceWorker.ready in particular, which
+      // waits for the worker to finish activating) burns exactly that window,
+      // so by the time this ran the prompt silently never appeared: the toggle
+      // just looked stuck.
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         setGate(permission === 'denied' ? 'denied' : 'ready');
         setNote({ tone: 'error', text: 'Bạn chưa cho phép thông báo.' });
         return;
       }
+
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
 
       const subscription =
         (await registration.pushManager.getSubscription()) ??
