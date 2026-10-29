@@ -111,8 +111,17 @@ interface BrowserSubscription {
   keys: { p256dh: string; auth: string };
 }
 
-/** Called right after the browser grants permission and subscribes. */
-export async function savePushSubscription(subscription: BrowserSubscription): Promise<ActionState> {
+/**
+ * Called right after the browser grants permission and subscribes. Saves the
+ * subscription and flips the preference on in one round trip instead of two
+ * separate actions each paying their own getUser() network call — on a phone
+ * network that was the difference between the toggle feeling instant and
+ * feeling stuck for a couple of seconds.
+ */
+export async function enablePush(
+  subscription: BrowserSubscription,
+  remindHour: number,
+): Promise<ActionState> {
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
@@ -120,34 +129,55 @@ export async function savePushSubscription(subscription: BrowserSubscription): P
   if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
     return { error: 'Đăng ký thông báo không hợp lệ.', ok: false };
   }
+  if (!Number.isInteger(remindHour) || remindHour < 0 || remindHour > 23) {
+    return { error: 'Giờ nhắc không hợp lệ.', ok: false };
+  }
 
-  const { error } = await supabase.from('push_subscriptions').upsert(
-    {
-      user_id: auth.user.id,
-      endpoint: subscription.endpoint,
-      p256dh: subscription.keys.p256dh,
-      auth: subscription.keys.auth,
-    },
-    { onConflict: 'endpoint' },
-  );
+  const [subResult, prefResult] = await Promise.all([
+    supabase.from('push_subscriptions').upsert(
+      {
+        user_id: auth.user.id,
+        endpoint: subscription.endpoint,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+      },
+      { onConflict: 'endpoint' },
+    ),
+    supabase
+      .from('notification_preferences')
+      .upsert({ user_id: auth.user.id, enabled: true, remind_hour: remindHour }, { onConflict: 'user_id' }),
+  ]);
 
-  if (error) return { error: 'Không lưu được đăng ký thông báo.', ok: false };
+  if (subResult.error) return { error: 'Không lưu được đăng ký thông báo.', ok: false };
+  if (prefResult.error) return { error: 'Không lưu được cài đặt nhắc nhở.', ok: false };
+
+  revalidatePath('/settings');
   return { error: null, ok: true };
 }
 
-/** Called when the toggle is switched off, so the push service stops being billed for it. */
-export async function removePushSubscription(endpoint: string): Promise<ActionState> {
+/**
+ * Called when the toggle is switched off: drops the subscription (so the push
+ * service stops being billed for it) and flips the preference in one round
+ * trip, same reasoning as enablePush above.
+ */
+export async function disablePush(endpoint: string | null, remindHour: number): Promise<ActionState> {
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
-  const { error } = await supabase
-    .from('push_subscriptions')
-    .delete()
-    .eq('user_id', auth.user.id)
-    .eq('endpoint', endpoint);
+  const [subResult, prefResult] = await Promise.all([
+    endpoint
+      ? supabase.from('push_subscriptions').delete().eq('user_id', auth.user.id).eq('endpoint', endpoint)
+      : Promise.resolve({ error: null }),
+    supabase
+      .from('notification_preferences')
+      .upsert({ user_id: auth.user.id, enabled: false, remind_hour: remindHour }, { onConflict: 'user_id' }),
+  ]);
 
-  if (error) return { error: 'Không xoá được đăng ký thông báo.', ok: false };
+  if (subResult.error) return { error: 'Không xoá được đăng ký thông báo.', ok: false };
+  if (prefResult.error) return { error: 'Không lưu được cài đặt nhắc nhở.', ok: false };
+
+  revalidatePath('/settings');
   return { error: null, ok: true };
 }
 

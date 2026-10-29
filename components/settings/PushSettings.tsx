@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import {
-  removePushSubscription,
-  savePushSubscription,
+  disablePush,
+  enablePush,
   sendTestNotification,
   updateNotificationPrefs,
 } from '@/app/(dashboard)/settings/actions';
@@ -64,10 +64,10 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
         });
         const json = subscription.toJSON();
         if (json.endpoint && json.keys) {
-          await savePushSubscription({
-            endpoint: json.endpoint,
-            keys: { p256dh: json.keys.p256dh!, auth: json.keys.auth! },
-          });
+          await enablePush(
+            { endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh!, auth: json.keys.auth! } },
+            hour,
+          );
         }
       } catch {
         // Best-effort: say nothing. The toggle still reflects the saved
@@ -114,18 +114,12 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
         throw new Error('invalid subscription');
       }
 
-      const saved = await savePushSubscription({
-        endpoint: json.endpoint,
-        keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-      });
-      if (saved.error) {
-        setNote({ tone: 'error', text: saved.error });
-        return;
-      }
-
-      const prefs = await updateNotificationPrefs(true, hour);
-      if (prefs.error) {
-        setNote({ tone: 'error', text: prefs.error });
+      const result = await enablePush(
+        { endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } },
+        hour,
+      );
+      if (result.error) {
+        setNote({ tone: 'error', text: result.error });
         return;
       }
 
@@ -145,11 +139,10 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
     try {
       const registration = await navigator.serviceWorker.getRegistration();
       const subscription = await registration?.pushManager.getSubscription();
-      if (subscription) {
-        await removePushSubscription(subscription.endpoint);
-        await subscription.unsubscribe();
-      }
-      await updateNotificationPrefs(false, hour);
+      await Promise.all([
+        disablePush(subscription?.endpoint ?? null, hour),
+        subscription?.unsubscribe(),
+      ]);
       setEnabled(false);
       setNote({ tone: 'ok', text: 'Đã tắt nhắc nhở.' });
     } catch {
