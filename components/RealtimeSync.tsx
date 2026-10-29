@@ -51,9 +51,13 @@ export default function RealtimeSync() {
       .subscribe();
 
     // Realtime drops the socket while the PWA is backgrounded on iOS, so what
-    // changed meanwhile never arrives as an event.
+    // changed meanwhile never arrives as an event — but only once the socket
+    // actually drops. Refreshing on every foreground return regardless (a
+    // glance at another app counts) wiped the whole Router Cache for nothing,
+    // so the next tab switched to always re-fetched from the server even
+    // though nothing had changed.
     function onVisible() {
-      if (document.visibilityState === 'visible') refresh();
+      if (document.visibilityState === 'visible' && channel.state !== 'joined') refresh();
     }
     document.addEventListener('visibilitychange', onVisible);
 
