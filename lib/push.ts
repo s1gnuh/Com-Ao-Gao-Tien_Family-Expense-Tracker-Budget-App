@@ -19,9 +19,10 @@ export interface StoredSubscription {
 
 /** Everything one person's reminder says, gathered before any of it is worded. */
 export interface ReminderFacts {
-  monthExpense: number;
-  /** "T10" — the household's month, not the server's. */
-  monthLabel: string;
+  /** The family fund alone — the one figure this household set out to watch. */
+  fundExpense: number;
+  /** The household's month number, not the server's. */
+  month: number;
   personal: { name: string; balance: number }[];
   bills: { name: string; amount: number; daysLeft: number }[];
   hasEntryToday: boolean;
@@ -66,9 +67,12 @@ export async function collectReminderFacts(
 
   const wallets = (walletsResult.data ?? []) as WalletRow[];
   const reach = new Set(wallets.map((wallet) => wallet.wallet_id));
+  const fund = new Set(
+    wallets.filter((wallet) => wallet.type === 'shared').map((wallet) => wallet.wallet_id),
+  );
 
-  const monthExpense = ((monthResult.data ?? []) as { wallet_id: string; expense: number }[])
-    .filter((row) => reach.has(row.wallet_id))
+  const fundExpense = ((monthResult.data ?? []) as { wallet_id: string; expense: number }[])
+    .filter((row) => fund.has(row.wallet_id))
     .reduce((sum, row) => sum + Number(row.expense), 0);
 
   const bills = sortBills(
@@ -84,8 +88,8 @@ export async function collectReminderFacts(
     }));
 
   return {
-    monthExpense,
-    monthLabel: `T${householdParts().month}`,
+    fundExpense,
+    month: householdParts().month,
     personal: wallets
       .filter((wallet) => wallet.type === 'personal')
       .map((wallet) => ({ name: wallet.name, balance: Number(wallet.balance) })),
@@ -142,7 +146,9 @@ function billLine({ name, amount, daysLeft }: ReminderFacts['bills'][number]): s
 export function buildReminderPayload(
   facts: ReminderFacts,
 ): { title: string; body: string; url: string; tag: string } {
-  const lines = [`💸 Chi ${facts.monthLabel}: ${formatVND(facts.monthExpense)}`];
+  const lines = [
+    `👨‍👩‍👧‍👦 Ví gia đình tháng ${facts.month} tổng đã chi: ${formatVND(facts.fundExpense)}`,
+  ];
 
   for (const wallet of facts.personal) {
     lines.push(`👤 ${wallet.name}: ${formatVND(wallet.balance)}`);
