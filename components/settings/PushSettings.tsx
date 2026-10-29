@@ -193,6 +193,7 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
         {gate === 'ready' && (
           <ToggleSwitch
             checked={enabled}
+            busy={busy}
             disabled={busy}
             onChange={(next) => void (next ? enable() : disable())}
           />
@@ -263,30 +264,54 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
 
 function ToggleSwitch({
   checked,
+  busy,
   disabled,
   onChange,
 }: {
   checked: boolean;
+  busy?: boolean;
   disabled?: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
+    // h-8 w-14 (32×56) rather than the tighter 28×48 it started at: still reads
+    // as a compact switch but clears the 44pt tap target every other control in
+    // this app holds itself to.
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label="Bật nhắc nhở cuối ngày"
+      aria-busy={busy}
+      aria-label="Nhắc nhở cuối ngày"
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`tap relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+      className={`tap relative flex h-8 w-14 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
         checked ? 'bg-brand' : 'bg-border'
       }`}
     >
       <span
         aria-hidden
-        className="absolute top-0.5 h-6 w-6 rounded-full bg-surface shadow transition-transform"
-        style={{ transform: checked ? 'translateX(22px)' : 'translateX(2px)' }}
-      />
+        className="absolute top-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-surface shadow transition-transform"
+        style={{ transform: checked ? 'translateX(26px)' : 'translateX(2px)' }}
+      >
+        {busy && (
+          // Toggling involves a native permission prompt and a server round
+          // trip, which can take seconds — without this the switch just sits
+          // dimmed and motionless, and a tap can look like it never landed.
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden
+            className="h-3.5 w-3.5 text-muted"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            style={{ animation: 'cagt-spin 650ms linear infinite' }}
+          >
+            <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
+          </svg>
+        )}
+      </span>
     </button>
   );
 }
