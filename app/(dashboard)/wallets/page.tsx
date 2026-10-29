@@ -25,11 +25,7 @@ export default async function WalletsPage() {
 
   const [balancesResult, monthResult, billsResult] = await Promise.all([
     supabase.from('wallet_balances').select('wallet_id,name,type,owner_id,is_archived,balance'),
-    supabase
-      .from('transactions')
-      .select('wallet_id,type,amount')
-      .gte('occurred_at', from)
-      .lte('occurred_at', to),
+    supabase.rpc('wallet_month_totals', { p_from: from, p_to: to }),
     supabase.from('recurring_bills').select('*').eq('is_active', true),
   ]);
 
@@ -48,17 +44,16 @@ export default async function WalletsPage() {
   const balances = (balancesResult.data ?? []) as WalletBalance[];
   const monthRows = (monthResult.data ?? []) as {
     wallet_id: string;
-    type: 'income' | 'expense';
-    amount: number;
+    income: number;
+    expense: number;
   }[];
 
-  const monthly = new Map<string, { income: number; expense: number }>();
-  for (const row of monthRows) {
-    const entry = monthly.get(row.wallet_id) ?? { income: 0, expense: 0 };
-    if (row.type === 'income') entry.income += Number(row.amount);
-    else entry.expense += Number(row.amount);
-    monthly.set(row.wallet_id, entry);
-  }
+  const monthly = new Map(
+    monthRows.map((row) => [
+      row.wallet_id,
+      { income: Number(row.income), expense: Number(row.expense) },
+    ]),
+  );
 
   const toCard = (wallet: WalletBalance): WalletCardData => ({
     ...wallet,
@@ -72,7 +67,9 @@ export default async function WalletsPage() {
   const shared = live.filter((wallet) => wallet.type === 'shared');
   const personal = live.filter((wallet) => wallet.type === 'personal');
   const archived = balances.filter((wallet) => wallet.is_archived);
-  const total = live.reduce((sum, wallet) => sum + Number(wallet.balance), 0);
+  // Personal wallets only, same as the overview: the fund holds no money, it
+  // records what the household spent.
+  const total = personal.reduce((sum, wallet) => sum + Number(wallet.balance), 0);
 
   const bills = sortBills(
     ((billsResult.data ?? []) as RecurringBill[]).map((bill) => describeBill(bill)),
@@ -86,7 +83,9 @@ export default async function WalletsPage() {
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Ví & Quỹ</h1>
-          <p className="tabular mt-0.5 text-sm text-muted">Tổng cộng {formatVND(total)}</p>
+          <p className="tabular mt-0.5 text-sm text-muted">
+            Ví cá nhân cộng lại {formatVND(total)}
+          </p>
         </div>
         <RefreshButton label="Làm mới số dư ví" />
       </header>

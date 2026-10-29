@@ -42,8 +42,8 @@ export async function updateTransaction(
   const noteRaw = String(formData.get('note') ?? '').trim();
 
   const supabase = await createClient();
-  // No ownership check here: transactions_update_own scopes the statement to
-  // rows the caller wrote, so someone else's row simply matches nothing.
+  // No access check here: transactions_update scopes the statement to wallets
+  // the caller can reach, so a row outside them simply matches nothing.
   const { data, error } = await supabase
     .from('transactions')
     .update({
@@ -57,9 +57,16 @@ export async function updateTransaction(
     .eq('id', id)
     .select('id');
 
-  if (error) return { error: 'Không lưu được thay đổi, thử lại nhé.' };
+  if (error) {
+    return {
+      error:
+        error.code === '23514'
+          ? 'Khoản thu chỉ ghi vào ví cá nhân được.'
+          : 'Không lưu được thay đổi, thử lại nhé.',
+    };
+  }
   if (!data || data.length === 0) {
-    return { error: 'Chỉ người tạo giao dịch mới sửa được khoản này.' };
+    return { error: 'Khoản này không còn nữa, có thể vừa bị xoá.' };
   }
 
   refreshViews();
@@ -78,7 +85,7 @@ export async function deleteTransaction(
 
   if (error) return { error: 'Không xoá được giao dịch, thử lại nhé.' };
   if (!data || data.length === 0) {
-    return { error: 'Chỉ người tạo giao dịch mới xoá được khoản này.' };
+    return { error: 'Khoản này không còn nữa, có thể vừa bị xoá.' };
   }
 
   refreshViews();

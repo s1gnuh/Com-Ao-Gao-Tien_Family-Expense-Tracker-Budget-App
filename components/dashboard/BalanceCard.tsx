@@ -12,7 +12,8 @@ export default function BalanceCard({ balance, income, expense, monthLabel }: Ba
 
   return (
     <section className="card" aria-label="Số dư và thu chi">
-      <p className="text-sm text-muted">Tổng số dư</p>
+      {/* Personal wallets only: the family fund records spending, not savings. */}
+      <p className="text-sm text-muted">Tổng số dư ví cá nhân</p>
       <p className="tabular mt-1 text-[34px] font-semibold leading-none tracking-tight">
         {formatVND(balance)}
       </p>

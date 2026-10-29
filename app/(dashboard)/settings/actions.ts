@@ -3,8 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { buildReminderPayload, sendPush, type WalletBalanceRow } from '@/lib/push';
-import { todayInput } from '@/lib/formatters';
+import { buildReminderPayload, collectReminderFacts, sendPush } from '@/lib/push';
 
 export interface ActionState {
   error: string | null;
@@ -214,16 +213,9 @@ export async function sendTestNotification(): Promise<ActionState> {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
-  const [subsResult, walletsResult, todayResult] = await Promise.all([
+  const [subsResult, facts] = await Promise.all([
     supabase.from('push_subscriptions').select('id,endpoint,p256dh,auth').eq('user_id', auth.user.id),
-    // RLS already limits this to the caller's own wallet plus the shared one.
-    supabase.from('wallet_balances').select('name,type,balance').eq('is_archived', false),
-    supabase
-      .from('transactions')
-      .select('id')
-      .eq('created_by', auth.user.id)
-      .eq('occurred_at', todayInput())
-      .limit(1),
+    collectReminderFacts(supabase, auth.user.id),
   ]);
 
   const subs = subsResult.data ?? [];
@@ -231,8 +223,7 @@ export async function sendTestNotification(): Promise<ActionState> {
     return { error: 'Chưa bật nhận thông báo trên thiết bị này.', ok: false };
   }
 
-  const wallets = (walletsResult.data ?? []) as WalletBalanceRow[];
-  const payload = buildReminderPayload(wallets, (todayResult.data?.length ?? 0) > 0);
+  const payload = buildReminderPayload(facts);
   payload.title = `🔔 Thử: ${payload.title}`;
 
   const results = await Promise.all(subs.map((sub) => sendPush(sub, payload)));

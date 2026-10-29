@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import QuickInputForm from '@/components/transactions/QuickInputForm';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, readSessionFast } from '@/lib/supabase/server';
 import type { Category, Wallet } from '@/types';
 
 export const metadata = { title: 'Thêm giao dịch' };
 
 export default async function AddTransactionPage() {
   const supabase = await createClient();
+  const session = await readSessionFast();
 
   const [walletsResult, categoriesResult] = await Promise.all([
     supabase.from('wallets').select('*').order('type', { ascending: true }).order('name'),
@@ -25,6 +26,7 @@ export default async function AddTransactionPage() {
       <QuickInputForm
         wallets={(walletsResult.data as Wallet[] | null) ?? []}
         categories={(categoriesResult.data as Category[] | null) ?? []}
+        currentUserId={session.id}
       />
     </div>
   );

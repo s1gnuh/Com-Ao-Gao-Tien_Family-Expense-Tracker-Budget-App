@@ -20,19 +20,24 @@ export default async function EditTransactionPage({
   const [transactionResult, walletsResult, categoriesResult] = await Promise.all([
     supabase
       .from('transactions')
-      .select('id,wallet_id,category_id,type,amount,note,occurred_at,created_by')
+      .select(
+        'id,wallet_id,category_id,type,amount,note,occurred_at,created_by,' +
+          'author:profiles(display_name)',
+      )
       .eq('id', id)
       .maybeSingle(),
     supabase.from('wallets').select('*').order('type', { ascending: true }).order('name'),
     supabase.from('categories').select('*').order('kind').order('name'),
   ]);
 
-  const row = transactionResult.data as (EditableTransaction & { created_by: string }) | null;
+  const row = transactionResult.data as
+    | (EditableTransaction & { created_by: string; author: { display_name: string } | null })
+    | null;
   if (!row) notFound();
 
-  // RLS lets any household member read a shared-wallet row but only its author
-  // change it, so say so here rather than letting the save fail later.
-  const mine = row.created_by === session.id;
+  // Anyone who can see the wallet can fix what is in it, so the only thing
+  // worth saying about authorship is whose entry is being changed.
+  const theirs = row.created_by !== session.id ? row.author?.display_name : null;
 
   return (
     <div className="space-y-5 py-4">
@@ -43,26 +48,28 @@ export default async function EditTransactionPage({
         <h1 className="text-2xl font-semibold">Sửa giao dịch</h1>
       </header>
 
-      {mine ? (
-        <QuickInputForm
-          wallets={(walletsResult.data as Wallet[] | null) ?? []}
-          categories={(categoriesResult.data as Category[] | null) ?? []}
-          initial={{
-            id: row.id,
-            wallet_id: row.wallet_id,
-            category_id: row.category_id,
-            type: row.type,
-            amount: Number(row.amount),
-            note: row.note,
-            occurred_at: row.occurred_at,
-          }}
-          footer={<DeleteTransactionButton id={row.id} />}
-        />
-      ) : (
+      {theirs && (
         <p className="card text-sm text-muted">
-          Khoản này do người khác trong nhà nhập, nên chỉ họ sửa hoặc xoá được.
+          Khoản này do <span className="font-medium text-fg">{theirs}</span> nhập. Cả nhà đều sửa
+          hoặc xoá được, nên soát kỹ trước khi đổi nhé.
         </p>
       )}
+
+      <QuickInputForm
+        wallets={(walletsResult.data as Wallet[] | null) ?? []}
+        categories={(categoriesResult.data as Category[] | null) ?? []}
+        currentUserId={session.id}
+        initial={{
+          id: row.id,
+          wallet_id: row.wallet_id,
+          category_id: row.category_id,
+          type: row.type,
+          amount: Number(row.amount),
+          note: row.note,
+          occurred_at: row.occurred_at,
+        }}
+        footer={<DeleteTransactionButton id={row.id} />}
+      />
     </div>
   );
 }

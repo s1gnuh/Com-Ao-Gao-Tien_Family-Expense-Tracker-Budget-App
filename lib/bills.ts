@@ -4,6 +4,14 @@ import type { BillStatus, BillWithStatus, RecurringBill } from '@/types';
 /** A bill counts as "sắp đến hạn" inside this window. */
 export const DUE_SOON_DAYS = 7;
 
+/**
+ * How far ahead the daily reminder looks. Wider than the badge on screen: a
+ * notification is read once and then gone, so it has to arrive early enough to
+ * still be worth acting on, while the screen can afford to wait until the
+ * thing is actually close.
+ */
+export const REMINDER_BILL_DAYS = 10;
+
 const MONTHS_PER_CYCLE: Record<RecurringBill['cycle'], number> = {
   monthly: 1,
   quarterly: 3,

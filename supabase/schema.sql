@@ -255,6 +255,36 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+/*
+ * Money in belongs to a person; money out can come from anywhere. The family
+ * fund is kept as a record of what the household spends, never topped up, so
+ * its running total is spending rather than a balance — which is also why the
+ * screens show it as this month's spend. The form already hides the fund when
+ * "Thu" is picked; this is what makes that hold for every path that writes a
+ * row, including a batch of receipts read by AI.
+ */
+create or replace function public.enforce_income_is_personal()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.type = 'income' and exists (
+    select 1 from public.wallets where id = new.wallet_id and type = 'shared'
+  ) then
+    raise exception 'Khoản thu chỉ ghi vào ví cá nhân được.'
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists transactions_income_is_personal on public.transactions;
+create trigger transactions_income_is_personal
+  before insert or update on public.transactions
+  for each row execute function public.enforce_income_is_personal();
+
 -- ---------------------------------------------------------------- RLS
 
 alter table public.profiles enable row level security;
@@ -308,8 +338,12 @@ drop policy if exists categories_write on public.categories;
 create policy categories_write on public.categories
   for all to authenticated using (not is_system) with check (not is_system);
 
--- Transactions: readable in any wallet you can reach. Only the author can
--- change or delete a row, so shared-wallet history cannot be rewritten by others.
+-- Transactions: readable, and fixable, in any wallet you can reach. Four people
+-- keeping one book share its mistakes too, so whoever spots a wrong row can
+-- correct it instead of chasing whoever typed it — the same rule recurring
+-- bills already follow. created_by still records who entered it, which is what
+-- member_breakdown() reports on; a wallet nobody else can see stays that way,
+-- because can_access_wallet() is what decides reach here.
 drop policy if exists transactions_select on public.transactions;
 create policy transactions_select on public.transactions
   for select to authenticated using (public.can_access_wallet(wallet_id));
@@ -320,13 +354,15 @@ create policy transactions_insert on public.transactions
   with check (public.can_access_wallet(wallet_id) and created_by = auth.uid());
 
 drop policy if exists transactions_update_own on public.transactions;
-create policy transactions_update_own on public.transactions
+drop policy if exists transactions_update on public.transactions;
+create policy transactions_update on public.transactions
   for update to authenticated
-  using (created_by = auth.uid()) with check (created_by = auth.uid());
+  using (public.can_access_wallet(wallet_id)) with check (public.can_access_wallet(wallet_id));
 
 drop policy if exists transactions_delete_own on public.transactions;
-create policy transactions_delete_own on public.transactions
-  for delete to authenticated using (created_by = auth.uid());
+drop policy if exists transactions_delete on public.transactions;
+create policy transactions_delete on public.transactions
+  for delete to authenticated using (public.can_access_wallet(wallet_id));
 
 -- The AI tally is a household-wide number everyone may read. There is no write
 -- policy on purpose: bump_ai_usage() is the only way in, so the count cannot be
@@ -451,6 +487,64 @@ as $$
     and (p_wallet is null or t.wallet_id = p_wallet)
   group by t.occurred_at
   order by t.occurred_at;
+$$;
+
+-- One row per wallet for a date window, so the overview and Ví & Quỹ can show
+-- the family fund's spending without either of them pulling the month's
+-- transactions down to the phone to add up by hand.
+create or replace function public.wallet_month_totals(
+  p_from date,
+  p_to date
+)
+returns table (wallet_id uuid, income numeric, expense numeric)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    t.wallet_id,
+    coalesce(sum(t.amount) filter (where t.type = 'income'), 0),
+    coalesce(sum(t.amount) filter (where t.type = 'expense'), 0)
+  from public.transactions t
+  where t.occurred_at between p_from and p_to
+  group by t.wallet_id;
+$$;
+
+-- Who entered what. Anyone may now edit anyone's row, so created_by is a record
+-- of who put the household's money through the book rather than a permission —
+-- which is exactly what makes it worth reporting on.
+create or replace function public.member_breakdown(
+  p_from date,
+  p_to date,
+  p_wallet uuid default null
+)
+returns table (
+  user_id uuid,
+  display_name text,
+  avatar_emoji text,
+  income numeric,
+  expense numeric,
+  tx_count bigint
+)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select
+    p.id,
+    p.display_name,
+    p.avatar_emoji,
+    coalesce(sum(t.amount) filter (where t.type = 'income'), 0),
+    coalesce(sum(t.amount) filter (where t.type = 'expense'), 0),
+    count(t.id)
+  from public.transactions t
+  join public.profiles p on p.id = t.created_by
+  where t.occurred_at between p_from and p_to
+    and (p_wallet is null or t.wallet_id = p_wallet)
+  group by p.id, p.display_name, p.avatar_emoji
+  order by 5 desc;
 $$;
 
 create or replace function public.category_breakdown(

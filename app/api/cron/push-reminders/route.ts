@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { buildReminderPayload, householdHourNow, sendPush, type WalletBalanceRow } from '@/lib/push';
+import {
+  buildReminderPayload,
+  collectReminderFacts,
+  householdHourNow,
+  sendPush,
+} from '@/lib/push';
 import { todayInput } from '@/lib/formatters';
 
 export const runtime = 'nodejs';
@@ -52,17 +57,9 @@ async function sendDueReminders() {
   for (const row of due ?? []) {
     const userId = row.user_id as string;
 
-    const [subsResult, walletsResult, todayTxResult] = await Promise.all([
+    const [subsResult, facts] = await Promise.all([
       supabase.from('push_subscriptions').select('id,endpoint,p256dh,auth').eq('user_id', userId),
-      // Mirrors can_access_wallet's condition by hand: the service client has
-      // no session for RLS to scope by, so "which wallets can this person see"
-      // has to be spelled out here instead of inherited from a policy.
-      supabase
-        .from('wallet_balances')
-        .select('name,type,balance')
-        .eq('is_archived', false)
-        .or(`owner_id.eq.${userId},type.eq.shared`),
-      supabase.from('transactions').select('id').eq('created_by', userId).eq('occurred_at', today).limit(1),
+      collectReminderFacts(supabase, userId),
     ]);
 
     const subs = subsResult.data ?? [];
@@ -80,8 +77,7 @@ async function sendDueReminders() {
       continue;
     }
 
-    const wallets = (walletsResult.data ?? []) as WalletBalanceRow[];
-    const payload = buildReminderPayload(wallets, (todayTxResult.data?.length ?? 0) > 0);
+    const payload = buildReminderPayload(facts);
 
     const results = await Promise.all(subs.map((sub) => sendPush(sub, payload)));
     const gone = subs.filter((_, index) => results[index] === 'gone').map((sub) => sub.id);

@@ -64,7 +64,16 @@ export async function createTransaction(
     receipt_hash: receiptHash,
   });
 
-  if (error) return { error: 'Không lưu được giao dịch, thử lại nhé.' };
+  // 23514 is the check violation enforce_income_is_personal() raises; it is the
+  // one failure here a person can actually act on.
+  if (error) {
+    return {
+      error:
+        error.code === '23514'
+          ? 'Khoản thu chỉ ghi vào ví cá nhân được.'
+          : 'Không lưu được giao dịch, thử lại nhé.',
+    };
+  }
 
   revalidatePath('/transactions');
   revalidatePath('/');
@@ -119,7 +128,14 @@ export async function createTransactionsBatch(
   }
 
   const { error } = await supabase.from('transactions').insert(payload);
-  if (error) return { error: 'Không lưu được, thử lại nhé.' };
+  if (error) {
+    return {
+      error:
+        error.code === '23514'
+          ? 'Có khoản thu đang ghi vào quỹ gia đình — sửa lại thành ví cá nhân nhé.'
+          : 'Không lưu được, thử lại nhé.',
+    };
+  }
 
   revalidatePath('/transactions');
   revalidatePath('/');

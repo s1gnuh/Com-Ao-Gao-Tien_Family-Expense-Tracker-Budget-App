@@ -35,7 +35,15 @@ export default function BillForm({
   const [cycle, setCycle] = useState<BillCycle>(initial?.cycle ?? 'monthly');
   const [dueDay, setDueDay] = useState(String(initial?.due_day ?? 1));
   const [dueMonth, setDueMonth] = useState(String(initial?.due_month ?? 1));
-  const [walletId, setWalletId] = useState(initial?.wallet_id ?? wallets[0]?.id ?? '');
+  // The family fund, not whichever wallet happens to sort first: a bill filed
+  // against someone's personal wallet is invisible to everyone else, who then
+  // cannot pay it or even see that it is due.
+  const [walletId, setWalletId] = useState(
+    initial?.wallet_id ??
+      wallets.find((wallet) => wallet.type === 'shared')?.id ??
+      wallets[0]?.id ??
+      '',
+  );
   const [categoryId, setCategoryId] = useState(initial?.category_id ?? '');
   const [assigneeId, setAssigneeId] = useState(initial?.assignee_id ?? '');
 

@@ -5,7 +5,7 @@ import type { TransactionWithRelations } from '@/types';
 interface TransactionCardProps {
   transaction: TransactionWithRelations;
   walletName?: string;
-  /** Only the author may change a row, so only they get the tap target. */
+  /** Rows in a list that leads somewhere; the dashboard's summary list does not. */
   editable?: boolean;
 }
 

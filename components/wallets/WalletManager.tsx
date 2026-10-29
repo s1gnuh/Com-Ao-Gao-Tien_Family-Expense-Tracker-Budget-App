@@ -95,19 +95,42 @@ export function WalletCard({ data }: { data: WalletCardData }) {
                 : 'Riêng tư'}
           </p>
         </div>
-        <p className="tabular shrink-0 text-lg font-semibold">{formatVND(Number(data.balance))}</p>
+        {/* The fund never takes money in, so its running total is spending with
+            a minus in front. Showing that as a balance read as debt; what the
+            household actually watches is the month's spend. */}
+        <div className="shrink-0 text-right">
+          <p className="tabular text-lg font-semibold">
+            {data.type === 'shared'
+              ? formatVND(data.month?.expense ?? 0)
+              : formatVND(Number(data.balance))}
+          </p>
+          {data.type === 'shared' && <p className="text-[11px] text-muted">chi tháng này</p>}
+        </div>
       </div>
 
       {data.month && !data.is_archived && (
         <dl className="mt-3 flex gap-4 border-t border-border pt-3 text-xs">
-          <div className="flex gap-1.5">
-            <dt className="text-muted">Thu tháng:</dt>
-            <dd className="tabular font-medium text-income">{formatVND(data.month.income)}</dd>
-          </div>
-          <div className="flex gap-1.5">
-            <dt className="text-muted">Chi tháng:</dt>
-            <dd className="tabular font-medium text-expense">{formatVND(data.month.expense)}</dd>
-          </div>
+          {data.type === 'shared' ? (
+            <div className="flex gap-1.5">
+              <dt className="text-muted">Tổng chi từ trước:</dt>
+              <dd className="tabular font-medium text-expense">
+                {formatVND(Math.max(0, -Number(data.balance)))}
+              </dd>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-1.5">
+                <dt className="text-muted">Thu tháng:</dt>
+                <dd className="tabular font-medium text-income">{formatVND(data.month.income)}</dd>
+              </div>
+              <div className="flex gap-1.5">
+                <dt className="text-muted">Chi tháng:</dt>
+                <dd className="tabular font-medium text-expense">
+                  {formatVND(data.month.expense)}
+                </dd>
+              </div>
+            </>
+          )}
         </dl>
       )}
 

@@ -8,6 +8,7 @@ import BatchReviewDeck, { type ReceiptDraft } from '@/components/transactions/Ba
 import { downscaleImage, hashImage } from '@/lib/image';
 import { MAX_RECEIPT_BATCH } from '@/lib/receipts';
 import { formatDate, formatVND, parseAmountInput, todayInput } from '@/lib/formatters';
+import { defaultWalletId, walletsForType } from '@/lib/wallets';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
 import { updateTransaction } from '@/app/(dashboard)/transactions/[id]/actions';
 import type { ApiResult, Category, ParsedReceipt, TransactionType, Wallet } from '@/types';
@@ -25,6 +26,8 @@ export interface EditableTransaction {
 interface QuickInputFormProps {
   wallets: Wallet[];
   categories: Category[];
+  /** Whose personal wallet income should land in by default. */
+  currentUserId: string | null;
   /** Present means editing that row rather than creating a new one. */
   initial?: EditableTransaction;
   /** Rendered under the save button; the edit screen passes its delete control. */
@@ -47,6 +50,7 @@ const INITIAL: CreateTransactionState = { error: null };
 export default function QuickInputForm({
   wallets,
   categories,
+  currentUserId,
   initial,
   footer,
 }: QuickInputFormProps) {
@@ -57,7 +61,9 @@ export default function QuickInputForm({
   );
 
   const [type, setType] = useState<TransactionType>(initial?.type ?? 'expense');
-  const [walletId, setWalletId] = useState(initial?.wallet_id ?? wallets[0]?.id ?? '');
+  const [walletId, setWalletId] = useState(
+    initial?.wallet_id ?? defaultWalletId(wallets, initial?.type ?? 'expense', currentUserId),
+  );
   const [amountRaw, setAmountRaw] = useState(initial ? String(Math.round(initial.amount)) : '');
   const [categoryId, setCategoryId] = useState(initial?.category_id ?? '');
   const [note, setNote] = useState(initial?.note ?? '');
@@ -80,6 +86,20 @@ export default function QuickInputForm({
   const albumRef = useRef<HTMLInputElement>(null);
 
   const amount = parseAmountInput(amountRaw);
+  const visibleWallets = useMemo(() => walletsForType(wallets, type), [wallets, type]);
+
+  /**
+   * Picking "Thu" while the family fund is selected would leave the form on a
+   * wallet the list no longer offers and the database refuses, so the wallet
+   * moves along with the choice.
+   */
+  function chooseType(next: TransactionType) {
+    setType(next);
+    if (!walletsForType(wallets, next).some((wallet) => wallet.id === walletId)) {
+      setWalletId(defaultWalletId(wallets, next, currentUserId));
+    }
+  }
+
   const grouped = useMemo(
     () => ({
       fixed: categories.filter((category) => category.kind === 'fixed'),
@@ -223,7 +243,12 @@ export default function QuickInputForm({
           note: parsed.data.note ?? '',
           categoryId: matched?.id ?? '',
           occurredAt: parsed.data.occurred_at ?? todayInput(),
-          walletId,
+          // A batch can hold both directions at once — a bank alert read as
+          // money in cannot carry the family fund the rest of them default to.
+          walletId:
+            parsed.data.type === 'income'
+              ? defaultWalletId(wallets, 'income', currentUserId)
+              : walletId,
           confidence: parsed.data.confidence,
         });
       }
@@ -285,8 +310,9 @@ export default function QuickInputForm({
 
     setAmountRaw(String(parsed.amount));
     // A balance-change alert starting with + is money in, so the direction has
-    // to follow what was read rather than assuming every photo is a purchase.
-    setType(parsed.type);
+    // to follow what was read rather than assuming every photo is a purchase —
+    // and the wallet has to follow the direction.
+    chooseType(parsed.type);
     setSource('ai_receipt');
     if (parsed.occurred_at) setOccurredAt(parsed.occurred_at);
     if (parsed.note) setNote(parsed.note);
@@ -416,7 +442,7 @@ export default function QuickInputForm({
           <button
             key={option}
             type="button"
-            onClick={() => setType(option)}
+            onClick={() => chooseType(option)}
             aria-pressed={type === option}
             className={`tap min-h-[44px] rounded-lg text-sm font-medium ${
               type === option
@@ -450,9 +476,11 @@ export default function QuickInputForm({
       </div>
 
       <div>
-        <span className="mb-1.5 block text-sm font-medium text-muted">Ví</span>
+        <span className="mb-1.5 block text-sm font-medium text-muted">
+          {type === 'income' ? 'Thu vào ví' : 'Chi từ ví'}
+        </span>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {wallets.map((wallet) => (
+          {visibleWallets.map((wallet) => (
             <button
               key={wallet.id}
               type="button"
@@ -469,6 +497,11 @@ export default function QuickInputForm({
             </button>
           ))}
         </div>
+        {type === 'income' && (
+          <span className="mt-1.5 block text-xs text-muted">
+            Khoản thu luôn về ví cá nhân. Quỹ gia đình chỉ ghi khoản chi.
+          </span>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -554,6 +587,7 @@ export default function QuickInputForm({
         drafts={batch.drafts}
         wallets={wallets}
         categories={categories}
+        currentUserId={currentUserId}
         skipped={batch.skipped}
         onCancel={() => setBatch(null)}
       />

@@ -5,6 +5,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { createTransactionsBatch } from '@/app/(dashboard)/transactions/add/actions';
 import { formatDate, formatVND, parseAmountInput } from '@/lib/formatters';
+import { defaultWalletId, walletsForType } from '@/lib/wallets';
 import type { ReceiptRow } from '@/lib/receipts';
 import type { Category, TransactionType, Wallet } from '@/types';
 
@@ -26,6 +27,8 @@ interface BatchReviewDeckProps {
   drafts: ReceiptDraft[];
   wallets: Wallet[];
   categories: Category[];
+  /** Whose personal wallet a card switched to "Thu" should land in. */
+  currentUserId: string | null;
   /** Images the AI could not use, so the count on screen still adds up. */
   skipped: number;
   onCancel: () => void;
@@ -52,6 +55,7 @@ export default function BatchReviewDeck({
   drafts,
   wallets,
   categories,
+  currentUserId,
   skipped,
   onCancel,
 }: BatchReviewDeckProps) {
@@ -262,6 +266,7 @@ export default function BatchReviewDeck({
           preview={previews[editing.id]}
           wallets={wallets}
           categories={categories}
+          currentUserId={currentUserId}
           onApprove={closeEditor}
           onDiscard={() => closeEditor(null)}
         />
@@ -531,6 +536,7 @@ interface DraftEditorProps {
   preview: string | undefined;
   wallets: Wallet[];
   categories: Category[];
+  currentUserId: string | null;
   onApprove: (draft: ReceiptDraft) => void;
   onDiscard: () => void;
 }
@@ -540,6 +546,7 @@ function DraftEditor({
   preview,
   wallets,
   categories,
+  currentUserId,
   onApprove,
   onDiscard,
 }: DraftEditorProps) {
@@ -551,6 +558,15 @@ function DraftEditor({
   const [occurredAt, setOccurredAt] = useState(draft.occurredAt);
 
   const amount = parseAmountInput(amountRaw);
+  const visibleWallets = walletsForType(wallets, type);
+
+  /** Same rule as the single-entry form: income follows to a personal wallet. */
+  function chooseType(next: TransactionType) {
+    setType(next);
+    if (!walletsForType(wallets, next).some((wallet) => wallet.id === walletId)) {
+      setWalletId(defaultWalletId(wallets, next, currentUserId));
+    }
+  }
 
   return (
     <div
@@ -570,7 +586,7 @@ function DraftEditor({
           <button
             key={option}
             type="button"
-            onClick={() => setType(option)}
+            onClick={() => chooseType(option)}
             aria-pressed={type === option}
             className={`tap min-h-[44px] rounded-lg text-sm font-medium ${
               type === option
@@ -600,9 +616,11 @@ function DraftEditor({
       </div>
 
       <div className="mt-3">
-        <span className="mb-1.5 block text-sm font-medium text-muted">Ví</span>
+        <span className="mb-1.5 block text-sm font-medium text-muted">
+          {type === 'income' ? 'Thu vào ví' : 'Chi từ ví'}
+        </span>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {wallets.map((wallet) => (
+          {visibleWallets.map((wallet) => (
             <button
               key={wallet.id}
               type="button"
