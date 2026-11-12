@@ -780,8 +780,6 @@ export default function QuickInputForm({
           )}
         </div>
 
-        {footer}
-
         {toast && (
           <Toast
             title={toast.title}
@@ -793,6 +791,11 @@ export default function QuickInputForm({
           />
         )}
       </form>
+
+      {/* Outside the form on purpose: the footer carries its own <form> (the
+          delete button), and a form nested in another is invalid HTML — the
+          delete tap submitted nothing while it sat in here. */}
+      {footer}
 
       {/* Outside the form on purpose: its inputs would otherwise submit this one
           the moment someone pressed Enter while editing a card. */}
