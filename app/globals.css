@@ -51,6 +51,9 @@
     background-color: rgb(var(--c-bg));
     overscroll-behavior-y: none;
     -webkit-text-size-adjust: 100%;
+    /* Turns off double-tap-to-zoom, so a tap fires at once instead of the
+       browser waiting to see if a second one follows. Pinch zoom stays. */
+    touch-action: manipulation;
   }
 
   body {

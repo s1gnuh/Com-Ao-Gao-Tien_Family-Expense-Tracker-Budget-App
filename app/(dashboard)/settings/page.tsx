@@ -2,7 +2,7 @@ import BudgetForm, { type BudgetRow } from '@/components/settings/BudgetForm';
 import ProfileForm from '@/components/settings/ProfileForm';
 import PasskeySettings, { type PasskeyRow } from '@/components/settings/PasskeySettings';
 import PushSettings from '@/components/settings/PushSettings';
-import { signOutAction } from './actions';
+import SignOutButton from '@/components/settings/SignOutButton';
 import { createClient, readSessionFast } from '@/lib/supabase/server';
 import { monthRange } from '@/lib/formatters';
 import type { Budget, Category, Profile, Wallet } from '@/types';
@@ -124,14 +124,7 @@ export default async function SettingsPage() {
         </span>
       </a>
 
-      <form action={signOutAction}>
-        <button
-          type="submit"
-          className="tap min-h-[48px] w-full rounded-xl border border-border bg-surface font-medium text-expense"
-        >
-          Đăng xuất
-        </button>
-      </form>
+      <SignOutButton />
 
       <p className="pb-2 text-center text-xs text-muted">Cơm Áo Gạo Tiền</p>
     </div>

@@ -1,8 +1,17 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { createClient, readSessionFast } from '@/lib/supabase/server';
+import {
+  SERVER_WRITTEN_MARKER,
+  authCookieName,
+  isAuthCookie,
+  readStoredSession,
+} from '@/lib/supabase/cookies';
 import { buildReminderPayload, collectReminderFacts, sendPush } from '@/lib/push';
 
 export interface ActionState {
@@ -257,9 +266,48 @@ export async function sendTestNotification(): Promise<ActionState> {
   return { error: null, ok: true };
 }
 
+/**
+ * Signing out is over the moment this device forgets the session, so that is
+ * all the response waits for: the cookies are dropped and the login screen
+ * comes back in one trip. supabase.auth.signOut() used to sit in front of it,
+ * costing a call to the auth server (two when the access token had lapsed and
+ * had to be refreshed first) before the button did anything visible.
+ *
+ * Revoking the refresh token still happens, just after the response is sent.
+ * Scope is 'local': it ends this device's session only, so signing out of the
+ * iPad no longer signs the same person out of their phone as well.
+ */
 export async function signOutAction() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  const cookieStore = await cookies();
+  const all = cookieStore.getAll();
+  const base = authCookieName();
+  const session = readStoredSession(all, base);
+
+  for (const { name } of all) {
+    if (isAuthCookie(name, base) || name === SERVER_WRITTEN_MARKER) cookieStore.delete(name);
+  }
+
+  const accessToken = session?.access_token;
+  const refreshToken = session?.refresh_token;
+  if (accessToken && refreshToken) {
+    after(async () => {
+      // A throwaway client holding the session in memory only: there are no
+      // cookies left to read, and nothing it does may write any back.
+      const client = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+      // setSession refreshes first if the access token has expired, so the
+      // revocation still lands on an old cookie.
+      const { error } = await client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (!error) await client.auth.signOut({ scope: 'local' });
+    });
+  }
+
   redirect('/login');
 }
 

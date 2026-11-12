@@ -66,13 +66,23 @@ export default function RealtimeSync() {
      * A save on this phone already re-rendered this screen with the change, and
      * RouteWarmer refills the other tabs after it. Refreshing again for the
      * same row would redo all of that — and empty the cache it just refilled.
-     * Anyone else's change, or one that cannot be told apart, still refreshes.
+     * Anyone else's change still refreshes.
+     *
+     * Rows that name no author (a budget, the shared fund, whose owner_id is
+     * null) are taken as this phone's own echo while its save is that recent.
+     * Refreshing for them queued the next save behind a full re-render, since
+     * the router runs server actions only after a pending refresh lands. The
+     * cost is a household member's budget edit in those same few seconds
+     * waiting for the next refresh, which in a four-person home is rare.
      */
     function onChange(payload: RealtimePostgresChangesPayload<Row>) {
       if (me.current && mutatedLocallyWithin(ECHO_WINDOW_MS)) {
         const row: Row =
           payload.new && Object.keys(payload.new).length > 0 ? payload.new : (payload.old as Row);
-        if (row && (row.created_by === me.current || row.owner_id === me.current)) return;
+        if (row) {
+          const author = row.created_by ?? row.owner_id ?? null;
+          if (author === me.current || author === null) return;
+        }
       }
       refresh();
     }
