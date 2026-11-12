@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GeminiError, parseReceiptImage } from '@/lib/gemini';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { RECEIPT_BUCKET, receiptObjectPath } from '@/lib/receipts';
 import type { ApiResult, ParsedReceipt } from '@/types';
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -63,10 +64,36 @@ export async function POST(request: Request) {
   }
 
   try {
-    const base64 = Buffer.from(await file.arrayBuffer()).toString('base64');
-    const parsed = await parseReceiptImage(base64, file.type);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    // The photo is filed while Gemini reads it rather than after, so keeping it
+    // costs no extra wait. Only a JPEG with a real hash is kept: that is what the
+    // app's own downscaler sends, and the hash is what names the file.
+    const keep = SHA256_HEX.test(hash) && file.type === 'image/jpeg';
+    const path = keep ? receiptObjectPath(user.id, hash) : null;
+
+    const storing = path ? storeReceipt(supabase, path, bytes) : Promise.resolve(false);
+
+    let parsed: ParsedReceipt;
+    try {
+      parsed = await parseReceiptImage(bytes.toString('base64'), file.type);
+    } catch (error) {
+      // Gemini failed: no row will reference the photo, so do not keep it.
+      if (await storing) await supabase.storage.from(RECEIPT_BUCKET).remove([path!]);
+      throw error;
+    }
+
+    const stored = await storing;
     await countCall(supabase);
-    return NextResponse.json<ApiResult<ParsedReceipt>>({ ok: true, data: parsed });
+
+    // Not a receipt after all: nothing will ever point at the file, so it goes.
+    if (stored && parsed.amount === null) {
+      await supabase.storage.from(RECEIPT_BUCKET).remove([path!]);
+    }
+
+    return NextResponse.json<ApiResult<ParsedReceipt>>({
+      ok: true,
+      data: { ...parsed, receipt_path: stored && parsed.amount !== null ? path : null },
+    });
   } catch (error) {
     if (error instanceof GeminiError) {
       // A 429 was turned away before it cost a request; anything else reached
@@ -85,4 +112,24 @@ export async function POST(request: Request) {
  */
 async function countCall(supabase: Awaited<ReturnType<typeof createClient>>) {
   await supabase.rpc('bump_ai_usage');
+}
+
+/**
+ * Best effort, like the tally above: a project without the `receipts` bucket
+ * yet, or a full free-tier quota, still gets its receipt read — the row is
+ * simply saved without a photo attached.
+ */
+async function storeReceipt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  path: string,
+  bytes: Buffer,
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.storage
+      .from(RECEIPT_BUCKET)
+      .upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
+    return !error;
+  } catch {
+    return false;
+  }
 }

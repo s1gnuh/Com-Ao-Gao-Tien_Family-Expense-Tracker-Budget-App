@@ -1,17 +1,19 @@
 'use client';
 
-import { useActionState, useMemo, useRef, useState } from 'react';
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import AmountInput from '@/components/ui/AmountInput';
 import Toast, { type ToastTone } from '@/components/ui/Toast';
 import BatchReviewDeck, { type ReceiptDraft } from '@/components/transactions/BatchReviewDeck';
 import { downscaleImage, hashImage } from '@/lib/image';
 import { MAX_RECEIPT_BATCH } from '@/lib/receipts';
-import { formatDate, formatVND, parseAmountInput, todayInput } from '@/lib/formatters';
+import { formatDate, formatSigned, formatVND, parseAmountInput, todayInput } from '@/lib/formatters';
 import { defaultWalletId, walletsForType } from '@/lib/wallets';
+import { findIncomeCategory, matchCategory } from '@/lib/categories';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
 import { updateTransaction } from '@/app/(dashboard)/transactions/[id]/actions';
-import type { ApiResult, Category, ParsedReceipt, TransactionType, Wallet } from '@/types';
+import type { Category, ParsedReceipt, TransactionType, Wallet } from '@/types';
 
 export interface EditableTransaction {
   id: string;
@@ -23,6 +25,12 @@ export interface EditableTransaction {
   occurred_at: string;
 }
 
+/** A note this person typed before, and the category it went with. */
+export interface RecentNote {
+  note: string;
+  category_id: string | null;
+}
+
 interface QuickInputFormProps {
   wallets: Wallet[];
   categories: Category[];
@@ -30,6 +38,8 @@ interface QuickInputFormProps {
   currentUserId: string | null;
   /** Present means editing that row rather than creating a new one. */
   initial?: EditableTransaction;
+  /** Offered as suggestions under the note field. */
+  recentNotes?: RecentNote[];
   /** Rendered under the save button; the edit screen passes its delete control. */
   footer?: React.ReactNode;
 }
@@ -45,20 +55,37 @@ type ParseResponse =
       seen?: { amount: number; occurred_at: string; note: string | null } | null;
     };
 
+interface ToastState {
+  title: string;
+  description: string;
+  note?: string;
+  tone?: ToastTone;
+  duration?: number;
+}
+
 const INITIAL: CreateTransactionState = { error: null };
+
+const WRONG_FORMAT: ToastState = {
+  title: 'Ảnh không đúng định dạng',
+  description: 'Chỉ nhận ảnh JPG, PNG hoặc HEIC. Chọn lại giúp mình nhé.',
+};
 
 export default function QuickInputForm({
   wallets,
   categories,
   currentUserId,
   initial,
+  recentNotes = [],
   footer,
 }: QuickInputFormProps) {
   const editing = initial !== undefined;
   const [state, formAction, submitting] = useActionState(
-    editing ? updateTransaction : createTransaction,
+    // Same signature; the edit action simply never reports `saved`.
+    (editing ? updateTransaction : createTransaction) as typeof createTransaction,
     INITIAL,
   );
+
+  const incomeCategory = useMemo(() => findIncomeCategory(categories), [categories]);
 
   const [type, setType] = useState<TransactionType>(initial?.type ?? 'expense');
   const [walletId, setWalletId] = useState(
@@ -70,35 +97,36 @@ export default function QuickInputForm({
   const [occurredAt, setOccurredAt] = useState(initial?.occurred_at ?? todayInput());
   const [source, setSource] = useState<'manual' | 'ai_receipt'>('manual');
   const [receiptHash, setReceiptHash] = useState('');
+  const [receiptPath, setReceiptPath] = useState('');
 
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const [aiMessage, setAiMessage] = useState<string | null>(null);
   /** Non-null once several images are read and waiting to be swiped through. */
   const [batch, setBatch] = useState<{ drafts: ReceiptDraft[]; skipped: number } | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [toast, setToast] = useState<{
-    title: string;
-    description: string;
-    note?: string;
-    tone?: ToastTone;
-  } | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+
   const cameraRef = useRef<HTMLInputElement>(null);
   const albumRef = useRef<HTMLInputElement>(null);
+  const intentRef = useRef<HTMLInputElement>(null);
+  const formTopRef = useRef<HTMLFormElement>(null);
+
+  // Read by handlers that finish after an await: by then the state captured
+  // when they started may be stale — the person can switch wallet while the
+  // AI is still reading the photo.
+  const walletRef = useRef(walletId);
+  walletRef.current = walletId;
+  const categoryRef = useRef(categoryId);
+  categoryRef.current = categoryId;
 
   const amount = parseAmountInput(amountRaw);
   const visibleWallets = useMemo(() => walletsForType(wallets, type), [wallets, type]);
+  const today = todayInput();
+  const yesterday = todayInput(new Date(Date.now() - 86_400_000));
 
-  /**
-   * Picking "Thu" while the family fund is selected would leave the form on a
-   * wallet the list no longer offers and the database refuses, so the wallet
-   * moves along with the choice.
-   */
-  function chooseType(next: TransactionType) {
-    setType(next);
-    if (!walletsForType(wallets, next).some((wallet) => wallet.id === walletId)) {
-      setWalletId(defaultWalletId(wallets, next, currentUserId));
-    }
-  }
+  // A stable handler: the toast restarts its auto-close timer whenever this
+  // changes, so an inline arrow kept pushing the dismissal back on every render.
+  const closeToast = useCallback(() => setToast(null), []);
 
   const grouped = useMemo(
     () => ({
@@ -108,14 +136,85 @@ export default function QuickInputForm({
     [categories],
   );
 
+  const noteSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    return recentNotes.filter(({ note: text }) => {
+      const key = text.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [recentNotes]);
+
+  /**
+   * Picking "Thu" while the family fund is selected would leave the form on a
+   * wallet the list no longer offers and the database refuses, so the wallet
+   * moves along with the choice — and money in lands on "Thu nhập" unless a
+   * category was already picked by hand.
+   */
+  function chooseType(next: TransactionType) {
+    setType(next);
+    if (!walletsForType(wallets, next).some((wallet) => wallet.id === walletRef.current)) {
+      setWalletId(defaultWalletId(wallets, next, currentUserId));
+    }
+    if (!incomeCategory) return;
+    if (next === 'income' && !categoryRef.current) setCategoryId(incomeCategory.id);
+    if (next === 'expense' && categoryRef.current === incomeCategory.id) setCategoryId('');
+  }
+
+  function changeNote(value: string) {
+    setNote(value);
+    // Choosing a note used before brings its category back, if none is set yet.
+    if (categoryRef.current) return;
+    const match = noteSuggestions.find(
+      (item) => item.note.trim().toLowerCase() === value.trim().toLowerCase(),
+    );
+    if (match?.category_id) setCategoryId(match.category_id);
+  }
+
+  /** Clears what belonged to the row just saved; keeps wallet, type and date. */
+  function resetForNext() {
+    setAmountRaw('');
+    setNote('');
+    setCategoryId(type === 'income' && incomeCategory ? incomeCategory.id : '');
+    setSource('manual');
+    setReceiptHash('');
+    setReceiptPath('');
+    setAiStatus('idle');
+    setAiMessage(null);
+  }
+
+  // "Lưu & nhập tiếp" answers with the saved row instead of leaving the page.
+  const savedAt = state.saved?.at;
+  useEffect(() => {
+    if (!savedAt || !state.saved) return;
+    resetForNext();
+    setToast({
+      tone: 'success',
+      title: `Đã lưu ${formatSigned(state.saved.amount, state.saved.type)}`,
+      description: 'Nhập tiếp khoản sau nhé.',
+      duration: 1600,
+    });
+    formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Runs once per save; the helpers it calls only set state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedAt]);
+
+  function categoryFor(guess: string | null, direction: TransactionType): string {
+    const matched = matchCategory(guess, categories);
+    // The model files most bank alerts of money in under "Khác"; the household
+    // reads that as income, so that is where it goes unless it was sure.
+    if (direction === 'income' && incomeCategory && (!matched || matched.name === 'Khác')) {
+      return incomeCategory.id;
+    }
+    return matched?.id ?? '';
+  }
+
   async function handleReceipt(file: File) {
     // "Choose File" in the iOS sheet can hand back a PDF or anything else, so
     // reject it here rather than spending a Gemini call to find out.
     if (!file.type.startsWith('image/')) {
-      setToast({
-        title: 'Ảnh không đúng định dạng',
-        description: 'Chỉ nhận ảnh JPG, PNG hoặc HEIC. Chọn lại giúp mình nhé.',
-      });
+      setToast(WRONG_FORMAT);
       return;
     }
 
@@ -152,6 +251,7 @@ export default function QuickInputForm({
       }
 
       setReceiptHash(digest);
+      setReceiptPath(result.data.receipt_path ?? '');
       applyParsed(result.data);
     } catch {
       setAiStatus('error');
@@ -168,10 +268,7 @@ export default function QuickInputForm({
     const images = files.filter((file) => file.type.startsWith('image/'));
 
     if (images.length === 0) {
-      setToast({
-        title: 'Ảnh không đúng định dạng',
-        description: 'Chỉ nhận ảnh JPG, PNG hoặc HEIC. Chọn lại giúp mình nhé.',
-      });
+      setToast(WRONG_FORMAT);
       return;
     }
     if (images.length === 1) {
@@ -233,22 +330,22 @@ export default function QuickInputForm({
           continue;
         }
 
-        const matched = matchCategory(parsed.data.category_guess, categories);
         drafts.push({
           id: item.hash,
           hash: item.hash,
           blob: item.blob,
+          receiptPath: parsed.data.receipt_path ?? null,
           amount: parsed.data.amount,
           type: parsed.data.type,
           note: parsed.data.note ?? '',
-          categoryId: matched?.id ?? '',
+          categoryId: categoryFor(parsed.data.category_guess, parsed.data.type),
           occurredAt: parsed.data.occurred_at ?? todayInput(),
           // A batch can hold both directions at once — a bank alert read as
           // money in cannot carry the family fund the rest of them default to.
           walletId:
             parsed.data.type === 'income'
               ? defaultWalletId(wallets, 'income', currentUserId)
-              : walletId,
+              : walletRef.current,
           confidence: parsed.data.confidence,
         });
       }
@@ -276,9 +373,7 @@ export default function QuickInputForm({
             cappedOut > 0
               ? `Mỗi lượt chỉ đọc ${MAX_RECEIPT_BATCH} ảnh, nên ${cappedOut} ảnh cuối đã bị bỏ qua.`
               : '',
-            unusable > 0
-              ? (reason ?? `${unusable} ảnh không đọc được hoặc đã nhập rồi.`)
-              : '',
+            unusable > 0 ? (reason ?? `${unusable} ảnh không đọc được hoặc đã nhập rồi.`) : '',
           ]
             .filter(Boolean)
             .join(' '),
@@ -309,6 +404,8 @@ export default function QuickInputForm({
     }
 
     setAmountRaw(String(parsed.amount));
+    // What the AI read wins over what was picked before, category included.
+    categoryRef.current = '';
     // A balance-change alert starting with + is money in, so the direction has
     // to follow what was read rather than assuming every photo is a purchase —
     // and the wallet has to follow the direction.
@@ -316,9 +413,7 @@ export default function QuickInputForm({
     setSource('ai_receipt');
     if (parsed.occurred_at) setOccurredAt(parsed.occurred_at);
     if (parsed.note) setNote(parsed.note);
-
-    const matched = matchCategory(parsed.category_guess, categories);
-    if (matched) setCategoryId(matched.id);
+    setCategoryId(categoryFor(parsed.category_guess, parsed.type));
 
     const unsure = parsed.confidence < 0.6;
     const kind = parsed.type === 'income' ? 'khoản thu' : 'khoản chi';
@@ -349,265 +444,342 @@ export default function QuickInputForm({
     );
   }
 
+  const blocked = submitting || amount === null || aiStatus === 'working';
+
   return (
     <>
-    <form action={formAction} className="space-y-5">
-      <input type="hidden" name="amount" value={amount ?? ''} />
-      <input type="hidden" name="type" value={type} />
-      <input type="hidden" name="wallet_id" value={walletId} />
-      <input type="hidden" name="category_id" value={categoryId} />
-      <input type="hidden" name="source" value={source} />
-      <input type="hidden" name="receipt_hash" value={receiptHash} />
-      {initial && <input type="hidden" name="id" value={initial.id} />}
+      <form ref={formTopRef} action={formAction} className="scroll-mt-4 space-y-5">
+        <input type="hidden" name="amount" value={amount ?? ''} />
+        <input type="hidden" name="type" value={type} />
+        <input type="hidden" name="wallet_id" value={walletId} />
+        <input type="hidden" name="category_id" value={categoryId} />
+        <input type="hidden" name="source" value={source} />
+        <input type="hidden" name="receipt_hash" value={receiptHash} />
+        <input type="hidden" name="receipt_url" value={receiptPath} />
+        <input ref={intentRef} type="hidden" name="intent" defaultValue="done" />
+        {initial && <input type="hidden" name="id" value={initial.id} />}
 
-      {!editing && (
-      <div className="card space-y-3">
-        <div>
-          <p className="text-sm font-medium">1. Tải hoá đơn lên</p>
-          <p className="text-xs text-muted">
-            AI điền sẵn số tiền, nội dung và ngày. Kéo xuống kiểm tra rồi lưu. Không có ảnh thì
-            nhập tay bên dưới cũng được. Chọn nhiều ảnh trong album (tối đa {MAX_RECEIPT_BATCH}) để
-            duyệt lần lượt bằng cách vuốt.
-          </p>
-        </div>
+        {!editing && (
+          <div className="card space-y-3">
+            <div>
+              <p className="text-sm font-medium">📷 Có hoá đơn? Để AI điền giúp</p>
+              <p className="text-xs text-muted">
+                Chụp hoá đơn hoặc chọn ảnh thông báo ngân hàng. Chọn nhiều ảnh trong album (tối đa{' '}
+                {MAX_RECEIPT_BATCH}) để duyệt lần lượt bằng cách vuốt.
+              </p>
+            </div>
 
-        {/* Two inputs rather than one: `capture` opens the camera directly, and
-            iOS drops the photo-library option from the sheet whenever it is set,
-            so an album pick needs an input without it. */}
-        <input
-          ref={cameraRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void handleReceipt(file);
-            event.target.value = '';
-          }}
-        />
-        <input
-          ref={albumRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={(event) => {
-            const files = Array.from(event.target.files ?? []);
-            if (files.length > 0) void handleReceipts(files);
-            event.target.value = '';
-          }}
-        />
+            {/* Two inputs rather than one: `capture` opens the camera directly, and
+                iOS drops the photo-library option from the sheet whenever it is set,
+                so an album pick needs an input without it. */}
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void handleReceipt(file);
+                event.target.value = '';
+              }}
+            />
+            <input
+              ref={albumRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                if (files.length > 0) void handleReceipts(files);
+                event.target.value = '';
+              }}
+            />
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={aiStatus === 'working'}
-            onClick={() => cameraRef.current?.click()}
-          >
-            📷 Chụp mới
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={aiStatus === 'working'}
-            onClick={() => albumRef.current?.click()}
-          >
-            🖼️ Từ album
-          </Button>
-        </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={aiStatus === 'working'}
+                onClick={() => cameraRef.current?.click()}
+              >
+                📷 Chụp mới
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={aiStatus === 'working'}
+                onClick={() => albumRef.current?.click()}
+              >
+                🖼️ Từ album
+              </Button>
+            </div>
 
-        {aiStatus === 'working' && (
-          <p role="status" className="text-center text-xs text-muted">
-            {progress
-              ? `Đang đọc ${progress.done}/${progress.total} ảnh…`
-              : 'Đang đọc hoá đơn…'}
-          </p>
+            {aiStatus === 'working' && (
+              <div role="status" className="space-y-1.5">
+                <p className="text-center text-xs text-muted">
+                  {progress ? `Đang đọc ${progress.done}/${progress.total} ảnh…` : 'Đang đọc hoá đơn…'}
+                </p>
+                <div aria-hidden className="h-1 overflow-hidden rounded-full bg-bg">
+                  <div
+                    className="h-full rounded-full bg-brand transition-[width] duration-300"
+                    style={{
+                      width: progress
+                        ? `${Math.max(8, (progress.done / progress.total) * 100)}%`
+                        : '60%',
+                      animation: progress ? undefined : 'cagt-sweep 1.4s ease-in-out infinite',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {aiMessage && (
+              <p
+                role="status"
+                className={`text-xs ${aiStatus === 'error' ? 'text-expense' : 'text-muted'}`}
+              >
+                {aiMessage}
+              </p>
+            )}
+          </div>
         )}
 
-        {aiMessage && (
-          <p
-            role="status"
-            className={`text-xs ${aiStatus === 'error' ? 'text-expense' : 'text-muted'}`}
-          >
-            {aiMessage}
-          </p>
-        )}
-      </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface p-1 ring-1 ring-border">
-        {(['expense', 'income'] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => chooseType(option)}
-            aria-pressed={type === option}
-            className={`tap min-h-[44px] rounded-lg text-sm font-medium ${
-              type === option
-                ? option === 'expense'
-                  ? 'bg-expense text-on-money'
-                  : 'bg-income text-on-money'
-                : 'text-muted'
-            }`}
-          >
-            {option === 'expense' ? 'Chi' : 'Thu'}
-          </button>
-        ))}
-      </div>
-
-      <div>
-        <span className="mb-1.5 block text-sm font-medium text-muted">Số tiền</span>
-        <input
-          name="amount_raw"
-          type="text"
-          inputMode="decimal"
-          autoFocus
-          required
-          placeholder="35k, 1tr2, 250000"
-          value={amountRaw}
-          onChange={(event) => setAmountRaw(event.target.value)}
-          className="tabular w-full rounded-xl border border-border bg-surface px-4 py-4 text-3xl font-semibold outline-none focus:border-brand"
-        />
-        <span className="mt-1.5 block text-sm text-muted">
-          {amount === null ? 'Gõ 35k hoặc 1tr2 cũng được' : formatVND(amount)}
-        </span>
-      </div>
-
-      <div>
-        <span className="mb-1.5 block text-sm font-medium text-muted">
-          {type === 'income' ? 'Thu vào ví' : 'Chi từ ví'}
-        </span>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {visibleWallets.map((wallet) => (
+        <div className="grid grid-cols-2 gap-2 rounded-xl bg-surface p-1 ring-1 ring-border">
+          {(['expense', 'income'] as const).map((option) => (
             <button
-              key={wallet.id}
+              key={option}
               type="button"
-              onClick={() => setWalletId(wallet.id)}
-              aria-pressed={walletId === wallet.id}
-              className={`tap min-h-[44px] shrink-0 rounded-xl border px-4 text-sm font-medium ${
-                walletId === wallet.id
-                  ? 'border-brand bg-brand/10 text-brand-strong'
-                  : 'border-border bg-surface text-muted'
+              onClick={() => chooseType(option)}
+              aria-pressed={type === option}
+              className={`tap min-h-[44px] rounded-lg text-sm font-medium ${
+                type === option
+                  ? option === 'expense'
+                    ? 'bg-expense text-on-money'
+                    : 'bg-income text-on-money'
+                  : 'text-muted'
               }`}
             >
-              {wallet.type === 'shared' ? '👨‍👩‍👧‍👦 ' : '👤 '}
-              {wallet.name}
+              {option === 'expense' ? 'Chi' : 'Thu'}
             </button>
           ))}
         </div>
-        {type === 'income' && (
-          <span className="mt-1.5 block text-xs text-muted">
-            Khoản thu luôn về ví cá nhân. Quỹ gia đình chỉ ghi khoản chi.
+
+        <AmountInput
+          name="amount_raw"
+          value={amountRaw}
+          onChange={setAmountRaw}
+          required
+          // Edit opens to review, not to retype; a new entry starts at the number.
+          autoFocus={!editing}
+        />
+
+        <div>
+          <span className="mb-1.5 block text-sm font-medium text-muted">
+            {type === 'income' ? 'Thu vào ví' : 'Chi từ ví'}
           </span>
-        )}
-      </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {visibleWallets.map((wallet) => (
+              <button
+                key={wallet.id}
+                type="button"
+                onClick={() => setWalletId(wallet.id)}
+                aria-pressed={walletId === wallet.id}
+                className={`tap min-h-[44px] shrink-0 rounded-xl border px-4 text-sm font-medium ${
+                  walletId === wallet.id
+                    ? 'border-brand bg-brand/10 text-brand-strong'
+                    : 'border-border bg-surface text-muted'
+                }`}
+              >
+                {wallet.type === 'shared' ? '👨‍👩‍👧‍👦 ' : '👤 '}
+                {wallet.name}
+              </button>
+            ))}
+          </div>
+          {type === 'income' && (
+            <span className="mt-1.5 block text-xs text-muted">
+              Khoản thu luôn về ví cá nhân. Quỹ gia đình chỉ ghi khoản chi.
+            </span>
+          )}
+        </div>
 
-      <div className="space-y-3">
-        <span className="block text-sm font-medium text-muted">Danh mục</span>
-        {(['variable', 'fixed'] as const).map((kind) =>
-          grouped[kind].length === 0 ? null : (
-            <div key={kind}>
-              <span className="mb-1.5 block text-xs uppercase tracking-wide text-muted">
-                {kind === 'fixed' ? 'Cố định' : 'Biến đổi'}
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                {grouped[kind].map((category) => (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => setCategoryId(category.id === categoryId ? '' : category.id)}
-                    aria-pressed={categoryId === category.id}
-                    className={`tap flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl border text-xs ${
-                      categoryId === category.id
-                        ? 'border-brand bg-brand/10 text-brand-strong'
-                        : 'border-border bg-surface text-muted'
-                    }`}
-                  >
-                    <span aria-hidden className="text-xl leading-none">
-                      {category.icon}
-                    </span>
-                    {category.name}
-                  </button>
-                ))}
+        <div className="space-y-3">
+          <span className="block text-sm font-medium text-muted">Danh mục</span>
+          {(['variable', 'fixed'] as const).map((kind) =>
+            grouped[kind].length === 0 ? null : (
+              <div key={kind}>
+                <span className="mb-1.5 block text-xs uppercase tracking-wide text-muted">
+                  {kind === 'fixed' ? 'Cố định' : 'Biến đổi'}
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {grouped[kind].map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => setCategoryId(category.id === categoryId ? '' : category.id)}
+                      aria-pressed={categoryId === category.id}
+                      className={`tap flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl border text-xs ${
+                        categoryId === category.id
+                          ? 'border-brand bg-brand/10 text-brand-strong'
+                          : 'border-border bg-surface text-muted'
+                      }`}
+                    >
+                      <span aria-hidden className="text-xl leading-none">
+                        {category.icon}
+                      </span>
+                      {category.name}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          ),
+            ),
+          )}
+        </div>
+
+        <div>
+          <Input
+            label="Ghi chú"
+            name="note"
+            type="text"
+            maxLength={140}
+            placeholder="Cơm trưa, xăng xe…"
+            list={noteSuggestions.length > 0 ? 'recent-notes' : undefined}
+            autoComplete="off"
+            enterKeyHint="done"
+            value={note}
+            onChange={(event) => changeNote(event.target.value)}
+          />
+          {noteSuggestions.length > 0 && (
+            <>
+              <datalist id="recent-notes">
+                {noteSuggestions.map((item) => (
+                  <option key={item.note} value={item.note} />
+                ))}
+              </datalist>
+              {!note && (
+                // Datalist suggestions on iOS only appear once typing starts, so
+                // the most common ones get a tap target of their own.
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                  {noteSuggestions.slice(0, 6).map((item) => (
+                    <button
+                      key={item.note}
+                      type="button"
+                      onClick={() => changeNote(item.note)}
+                      className="tap min-h-[36px] shrink-0 rounded-full border border-border bg-surface px-3 text-xs text-muted"
+                    >
+                      {item.note}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div>
+          <Input
+            label="Ngày"
+            name="occurred_at"
+            type="date"
+            required
+            value={occurredAt}
+            onChange={(event) => setOccurredAt(event.target.value)}
+          />
+          <div className="mt-2 flex gap-2">
+            {[
+              { label: 'Hôm nay', value: today },
+              { label: 'Hôm qua', value: yesterday },
+            ].map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                onClick={() => setOccurredAt(option.value)}
+                aria-pressed={occurredAt === option.value}
+                className={`tap min-h-[36px] rounded-full border px-3 text-xs font-medium ${
+                  occurredAt === option.value
+                    ? 'border-brand bg-brand/10 text-brand-strong'
+                    : 'border-border bg-surface text-muted'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {state.error && (
+          <p role="alert" className="text-sm text-expense">
+            {state.error}
+          </p>
         )}
-      </div>
 
-      <Input
-        label="Ghi chú"
-        name="note"
-        type="text"
-        maxLength={140}
-        placeholder="Cơm trưa, xăng xe…"
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
-      />
+        {/* Pinned above the tab bar: twelve category tiles push the save button
+            a full screen down, and scrolling for it after every entry is the
+            part of quick entry that was not quick. */}
+        <div
+          className="sticky z-30 -mx-4 border-t border-border bg-bg/95 px-4 py-3 backdrop-blur"
+          style={{ bottom: 'calc(var(--nav-h) + env(safe-area-inset-bottom))' }}
+        >
+          {editing ? (
+            <Button type="submit" full disabled={blocked}>
+              {submitting ? 'Đang lưu…' : 'Lưu thay đổi'}
+            </Button>
+          ) : (
+            <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={blocked}
+                onClick={() => {
+                  if (intentRef.current) intentRef.current.value = 'again';
+                }}
+              >
+                {submitting ? '…' : '+ Lưu & nhập tiếp'}
+              </Button>
+              <Button
+                type="submit"
+                disabled={blocked}
+                onClick={() => {
+                  if (intentRef.current) intentRef.current.value = 'done';
+                }}
+              >
+                {submitting
+                  ? 'Đang lưu…'
+                  : amount !== null
+                    ? `Lưu ${formatSigned(amount, type)}`
+                    : 'Lưu giao dịch'}
+              </Button>
+            </div>
+          )}
+        </div>
 
-      <Input
-        label="Ngày"
-        name="occurred_at"
-        type="date"
-        required
-        value={occurredAt}
-        onChange={(event) => setOccurredAt(event.target.value)}
-      />
+        {footer}
 
+        {toast && (
+          <Toast
+            title={toast.title}
+            description={toast.description}
+            note={toast.note}
+            tone={toast.tone}
+            duration={toast.duration}
+            onClose={closeToast}
+          />
+        )}
+      </form>
 
-      {state.error && (
-        <p role="alert" className="text-sm text-expense">
-          {state.error}
-        </p>
-      )}
-
-      <Button type="submit" full disabled={submitting || amount === null}>
-        {submitting ? 'Đang lưu…' : editing ? 'Lưu thay đổi' : 'Lưu giao dịch'}
-      </Button>
-
-      {footer}
-
-      {toast && (
-        <Toast
-          title={toast.title}
-          description={toast.description}
-          note={toast.note}
-          tone={toast.tone}
-          onClose={() => setToast(null)}
+      {/* Outside the form on purpose: its inputs would otherwise submit this one
+          the moment someone pressed Enter while editing a card. */}
+      {batch && (
+        <BatchReviewDeck
+          drafts={batch.drafts}
+          wallets={wallets}
+          categories={categories}
+          currentUserId={currentUserId}
+          skipped={batch.skipped}
+          onCancel={() => setBatch(null)}
         />
       )}
-    </form>
-
-    {/* Outside the form on purpose: its inputs would otherwise submit this one
-        the moment someone pressed Enter while editing a card. */}
-    {batch && (
-      <BatchReviewDeck
-        drafts={batch.drafts}
-        wallets={wallets}
-        categories={categories}
-        currentUserId={currentUserId}
-        skipped={batch.skipped}
-        onCancel={() => setBatch(null)}
-      />
-    )}
     </>
   );
-}
-
-/** Gemini answers with unaccented labels ("An uong"), the DB stores "Ăn uống". */
-function matchCategory(guess: string | null, categories: Category[]): Category | undefined {
-  if (!guess) return undefined;
-  const target = normalize(guess);
-  return categories.find((category) => normalize(category.name) === target);
-}
-
-function normalize(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/gi, 'd')
-    .toLowerCase()
-    .trim();
 }

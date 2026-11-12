@@ -1,50 +1,47 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { NextResponse, type NextRequest } from 'next/server';
+import {
+  AUTH_COOKIE_OPTIONS,
+  SERVER_WRITTEN_MARKER,
+  authCookieName,
+  readStoredSession,
+} from '@/lib/supabase/cookies';
+import {
+  clearSessionCookies,
+  copyResponseCookies,
+  markServerWritten,
+  reissueSessionCookies,
+} from '@/lib/supabase/reissue';
 
 type CookiesToSet = { name: string; value: string; options: CookieOptions }[];
 
-const PUBLIC_PATHS = ['/login', '/auth'];
+const PUBLIC_PATHS = ['/login'];
 
-const PROJECT_REF = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split('.')[0];
-const AUTH_COOKIE = `sb-${PROJECT_REF}-auth-token`;
+const AUTH_COOKIE = authCookieName();
 
 /** Refresh this long before expiry rather than waiting for the token to lapse. */
 const REFRESH_WINDOW_S = 60;
 
-function decodeBase64(value: string): string {
-  const binary = atob(value);
-  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
-}
-
-/**
- * Unix seconds the stored session expires at, or null when there is no readable
- * session. Reads the cookie only — @supabase/ssr splits long sessions across
- * `name.0`, `name.1`, so the parts are rejoined in name order.
- */
+/** Unix seconds the stored session expires at, or null when there is none to read. */
 function sessionExpiry(request: NextRequest): number | null {
-  const parts = request.cookies
-    .getAll()
-    .filter(({ name }) => name === AUTH_COOKIE || name.startsWith(`${AUTH_COOKIE}.`))
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(({ value }) => value);
-
-  if (parts.length === 0) return null;
-
-  let raw = parts.join('');
-  if (raw.startsWith('base64-')) raw = raw.slice('base64-'.length);
-
-  try {
-    const session = JSON.parse(decodeBase64(raw)) as { expires_at?: number };
-    return typeof session.expires_at === 'number' ? session.expires_at : null;
-  } catch {
-    return null;
-  }
+  const expiresAt = readStoredSession(request.cookies.getAll(), AUTH_COOKIE)?.expires_at;
+  return typeof expiresAt === 'number' ? expiresAt : null;
 }
 
-function redirectToLogin(request: NextRequest) {
+function redirectToLogin(request: NextRequest, reason?: 'expired') {
   const redirect = request.nextUrl.clone();
   redirect.pathname = '/login';
-  redirect.searchParams.set('next', request.nextUrl.pathname);
+  redirect.search = '';
+  if (request.nextUrl.pathname !== '/') redirect.searchParams.set('next', request.nextUrl.pathname);
+  if (reason) redirect.searchParams.set('reason', reason);
+  return NextResponse.redirect(redirect);
+}
+
+function redirectHome(request: NextRequest) {
+  const redirect = request.nextUrl.clone();
+  redirect.pathname = '/';
+  redirect.search = '';
   return NextResponse.redirect(redirect);
 }
 
@@ -65,17 +62,17 @@ export async function middleware(request: NextRequest) {
   // every byte of data behind that decision is still gated by RLS, which
   // validates the token server-side on each query.
   if (expiry !== null && expiry - nowSeconds > REFRESH_WINDOW_S) {
-    if (isPublic && pathname === '/login') {
-      const redirect = request.nextUrl.clone();
-      redirect.pathname = '/';
-      redirect.search = '';
-      return NextResponse.redirect(redirect);
-    }
-    return NextResponse.next({ request });
+    const response = isPublic && pathname === '/login' ? redirectHome(request) : NextResponse.next({ request });
+
+    // The browser last wrote the session itself (capped at 7 days by Safari),
+    // or a day has passed: send it back from here so it lives the full 400.
+    if (!request.cookies.has(SERVER_WRITTEN_MARKER)) reissueSessionCookies(request.cookies, response);
+    return response;
   }
 
-  if (expiry === null && !isPublic) return redirectToLogin(request);
-  if (expiry === null) return NextResponse.next({ request });
+  if (expiry === null) {
+    return isPublic ? NextResponse.next({ request }) : redirectToLogin(request);
+  }
 
   // Expired or nearly so: talk to Supabase, which rotates the token and writes
   // the refreshed cookies onto the response.
@@ -85,6 +82,7 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: AUTH_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -102,16 +100,30 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const { data } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser();
 
-  if (!data.user && !isPublic) return redirectToLogin(request);
+  if (!data.user) {
+    // A dropped connection says nothing about the session. Logging someone out
+    // because the phone was briefly offline would undo the whole point of a
+    // session that lasts; let the page load and the next visit try again.
+    if (error && isAuthRetryableFetchError(error)) return response;
 
-  if (data.user && pathname === '/login') {
-    const redirect = request.nextUrl.clone();
-    redirect.pathname = '/';
-    redirect.search = '';
-    return NextResponse.redirect(redirect);
+    // The refresh token itself was refused: revoked, already used, or the
+    // account is gone. There is no way back without the password, so clear
+    // every trace of the old session rather than retrying it on every request,
+    // and tell the login screen why the person landed there.
+    const redirect = isPublic ? NextResponse.next({ request }) : redirectToLogin(request, 'expired');
+    clearSessionCookies(request.cookies, redirect);
+    return redirect;
   }
+
+  markServerWritten(response);
+
+  // Any response we hand back instead of `response` must carry the rotated
+  // cookies with it. Dropping them throws away the new refresh token after the
+  // old one was already spent, and Supabase revokes a session whose spent token
+  // turns up again — which is how a redirect alone used to log people out.
+  if (pathname === '/login') return copyResponseCookies(response, redirectHome(request));
 
   return response;
 }

@@ -32,6 +32,9 @@ Một cuốn sổ chi tiêu chung cho đúng **bốn người trong một nhà**
 - **Ví cá nhân & quỹ gia đình** — tách bạch bằng Row Level Security ở tầng cơ sở dữ liệu, không phải bằng điều kiện trong code.
 - **Đọc hoá đơn bằng AI** — nhận cả hoá đơn giấy lẫn ảnh chụp màn hình biến động số dư. Hiểu dấu `+`/`−` để phân biệt thu/chi, và đọc đúng ngày kiểu `14/10/26`.
 - **Duyệt hàng loạt bằng cách vuốt** — chọn tối đa 5 ảnh một lượt, mỗi ảnh là một lời gọi riêng nên một tấm mờ không kéo đổ cả loạt. Kết quả hiện thành chồng thẻ kiểu Tinder: vuốt phải để duyệt, vuốt trái để sửa, rồi ghi tất cả bằng một lần `insert`.
+- **Đăng nhập bằng Face ID / Touch ID** — bật một lần trong Cài đặt, từ đó khi phiên hết hạn chỉ cần nhìn vào máy thay vì gõ lại mật khẩu. Dùng passkey (WebAuthn) chuẩn: khuôn mặt không rời điện thoại, máy chủ chỉ giữ khoá công khai.
+- **Nhập nhanh thân thiện với bàn phím iPhone** — phím tắt `000` / `k` / `tr` ngay dưới ô số tiền (bàn phím số của iOS không có chữ cái), hiểu cả "1tr250", "2 củ", "500 nghìn"; nút **Lưu & nhập tiếp** để ghi liền nhiều khoản; chạm một ghi chú cũ là chọn lại luôn danh mục của nó; nút Hôm nay / Hôm qua; thanh nút lưu luôn nằm trên màn hình.
+- **Giữ ảnh hoá đơn gốc** — ảnh AI đã đọc được lưu vào bucket riêng tư, mở lại được từ màn sửa giao dịch. Ai thấy được giao dịch thì mới xem được ảnh.
 - **Chống nhập trùng** — mỗi ảnh được băm SHA-256 và đối chiếu **trước** khi gọi AI, nên ảnh đã tải lên rồi không tốn thêm token nào.
 - **Lịch giao dịch** — xem cả tháng, chạm vào ngày để lọc.
 - **Hoá đơn định kỳ** — tiền nhà, điện, nước, học phí… kèm trạng thái quá hạn / sắp đến hạn và cảnh báo ngay trang chủ.
@@ -111,7 +114,30 @@ File [`vercel.json`](vercel.json) đã khai sẵn 24 Cron Job (mỗi giờ UTC m
 
 Supabase Auth không có provider username, nên mỗi tài khoản được lưu dưới một địa chỉ email nội bộ sinh từ tên đăng nhập (`bo` → `bo@comaogaotien.app`). Người dùng không bao giờ thấy hay gõ địa chỉ đó, và không có email nào được gửi đi. Lợi ích phụ: Supabase vốn bắt email phải duy nhất, nên tên đăng nhập tự động không trùng.
 
-Phiên đăng nhập lưu trong cookie với hạn **400 ngày** (mức tối đa trình duyệt cho phép), nên đăng nhập một lần là dùng mãi cho tới khi xoá app.
+### Giữ đăng nhập (gần như) vĩnh viễn
+
+Cookie phiên có hạn **400 ngày** — mức tối đa trình duyệt cho phép — và **được gia hạn lại 400 ngày mỗi lần mở app**. Chỉ khi bỏ app không mở quá 400 ngày, hoặc Supabase thu hồi phiên, mới phải đăng nhập lại.
+
+Có một cái bẫy riêng của Safari làm điều này hỏng trước đây: cookie ghi bằng JavaScript (`document.cookie`) bị **ITP cắt còn tối đa 7 ngày**, bất kể max-age ghi gì. Thư viện Supabase phía trình duyệt ghi cookie đúng kiểu đó mỗi lần làm mới token, nên điện thoại bỏ không một tuần là bị đăng xuất. Cách sửa:
+
+- Mỗi lần trình duyệt tự ghi phiên, nó gọi `/api/auth/touch`, route này gửi trả chính các cookie đó qua header `Set-Cookie` (không bị giới hạn 7 ngày).
+- Cookie đánh dấu `cagt-sess-srv` cho middleware biết lần ghi gần nhất có phải từ máy chủ không; nếu không, lần tải trang kế tiếp sẽ tự ghi lại từ máy chủ.
+- Khi middleware làm mới token rồi chuyển hướng, cookie mới được mang theo (trước đây bị rơi mất — token cũ đã dùng xuất hiện lại khiến Supabase thu hồi cả phiên).
+- Cookie phiên được giải mã đúng chuẩn base64url (`atob` thuần ném lỗi với ký tự `-` và `_`).
+
+### Khi phiên không gia hạn được
+
+Nếu Supabase từ chối refresh token (đã bị thu hồi, đã dùng rồi, tài khoản bị xoá), app **xoá sạch cookie phiên và đưa về màn đăng nhập** kèm thông báo "Phiên đăng nhập đã hết hạn". Việc này xảy ra ở cả hai nơi: middleware (khi chuyển trang) và `SessionGuard` (khi app đang mở trên một màn hình). Mất mạng tạm thời **không** bị coi là hết phiên.
+
+Để phiên không tự hết hạn phía Supabase, giữ nguyên mặc định trong **Authentication → Sessions**: không bật *Time-box user sessions* và *Inactivity timeout*.
+
+### Face ID / Touch ID
+
+Bật trong **Cài đặt → Đăng nhập bằng Face ID** (cần đăng nhập bằng mật khẩu ít nhất một lần). Sau đó màn đăng nhập hiện nút Face ID lên đầu, và chạm vào ô tên đăng nhập là iOS gợi ý passkey ngay trên bàn phím.
+
+Cơ chế: `@simplewebauthn` xác minh chữ ký từ Secure Enclave, rồi máy chủ tạo một token magic-link một lần bằng service key (không gửi email nào) và đổi nó thành phiên Supabase bình thường — cùng loại cookie 400 ngày như đăng nhập bằng mật khẩu. Mỗi challenge chỉ dùng được một lần và hết hạn sau 5 phút, vì passkey iCloud luôn báo bộ đếm chữ ký bằng 0 nên đó là lớp chống phát lại duy nhất.
+
+> Passkey gắn với **đúng tên miền** nơi nó được tạo. Bật Face ID trên domain production thì chỉ dùng được ở đó, không dùng được trên URL preview của Vercel.
 
 ## Vài quyết định đáng chú ý
 
@@ -137,17 +163,24 @@ components/
   bills/ dashboard/ settings/ transactions/ wallets/ ui/
 lib/
   bills.ts             tính trạng thái hoá đơn theo chu kỳ
+  categories.ts        khớp nhãn danh mục của AI với danh mục trong DB
   formatters.ts        tiền VND, ngày, và đọc "35k" / "1tr2"
   gemini.ts            prompt + schema cho AI
   push.ts              gửi Web Push, dựng nội dung nhắc nhở (dùng chung cron + nút test)
   push-client.ts        phần việc chỉ chạy được ở trình duyệt (khoá VAPID, phát hiện đã cài app)
-  supabase/            client cho trình duyệt và máy chủ
+  supabase/            client cho trình duyệt và máy chủ, quy tắc cookie phiên
+  webauthn.ts          Face ID: challenge một lần, đổi passkey thành phiên Supabase
+  passkey-client.ts    phần Face ID chạy ở trình duyệt
 public/sw.js           service worker: nhận push, mở app khi chạm thông báo
-supabase/schema.sql    toàn bộ bảng, RLS, view và hàm
+supabase/schema.sql    toàn bộ bảng, RLS, view, hàm và bucket ảnh hoá đơn
+tests/                 test cho đọc số tiền, cookie phiên, quy tắc ví/hoá đơn (npm test)
 vercel.json             24 Cron Job gửi nhắc nhở
 ```
 
 ## Giới hạn đã biết
+
+- Build trên máy **Windows cần Node 22 hoặc 24 LTS**. Node 26 trên Windows trả lỗi `EISDIR` cho `readlink` lên file thường và webpack của Next 15 không xử lý được. Vercel không bị ảnh hưởng.
+- Ảnh hoá đơn của một giao dịch do người khác xoá sẽ còn lại trong Storage — chính sách chỉ cho người tải lên xoá ảnh của mình.
 
 - Thiết kế cho **đúng 4 người**. Không có hệ thống mời hay phân quyền nhóm.
 - Form đăng ký để mở công khai. Với app gia đình thì không sao, nhưng nếu muốn khoá lại sau khi đủ 4 tài khoản, tắt **Allow new users to sign up** trong Supabase.

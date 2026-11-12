@@ -37,32 +37,63 @@ function trim(value: number): string {
     .replace('.', ',');
 }
 
+/** Spoken and typed unit words, folded to one multiplier each. */
+const UNITS: [RegExp, number][] = [
+  [/^(k|n|ng|nghin|ngan)$/, 1_000],
+  [/^(tr|m|trieu|cu|cuc)$/, 1_000_000],
+  [/^(ty|b|ti)$/, 1_000_000_000],
+];
+
+function unitValue(word: string): number | null {
+  for (const [pattern, multiplier] of UNITS) if (pattern.test(word)) return multiplier;
+  return null;
+}
+
 /**
- * Reads what someone types into the quick-entry field. Accepts "35k", "1tr2",
- * "1.250.000" and "1,25tr" because nobody types full digits on a phone.
+ * Reads what someone types into the quick-entry field, the way they would say
+ * it: "35k", "1tr2", "1tr250", "1,5 triệu", "2 củ", "1.250.000", "500 nghìn".
+ *
+ * Digits after a unit are a decimal tail, not a separate number: "1tr2" is 1.2
+ * million and "1tr250" is 1.25 million — reading the tail as a whole number of
+ * hundred-thousands turned the second into 3.5 million.
  */
 export function parseAmountInput(raw: string): number | null {
-  const text = raw.trim().toLowerCase().replace(/\s+/g, '');
+  const text = raw
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/\s+/g, '')
+    .replace(/(vnd|dong|d|₫)$/, '');
   if (!text) return null;
 
-  const compound = text.match(/^(\d+)(tr|m)(\d+)$/);
+  // 1tr2, 35k5, 2ty3
+  const compound = text.match(/^(\d+)([a-z]+)(\d+)$/);
   if (compound) {
-    const [, whole, , fraction] = compound;
-    return Number(whole) * 1_000_000 + Number(fraction) * (fraction!.length === 1 ? 100_000 : 10_000);
+    const [, whole, unit, tail] = compound;
+    const multiplier = unitValue(unit!);
+    if (multiplier === null) return null;
+    return Math.round((Number(whole) + Number(`0.${tail}`)) * multiplier);
   }
 
-  const suffixed = text.match(/^(\d+(?:[.,]\d+)?)(k|tr|m|ty|tỷ|b)$/);
+  // 35k, 1,5tr, 1.5trieu
+  const suffixed = text.match(/^(\d+(?:[.,]\d+)?)([a-z]+)$/);
   if (suffixed) {
     const [, numeric, unit] = suffixed;
+    const multiplier = unitValue(unit!);
     const value = Number(numeric!.replace(',', '.'));
-    if (!Number.isFinite(value)) return null;
-    const multiplier = unit === 'k' ? 1_000 : unit === 'tr' || unit === 'm' ? 1_000_000 : 1_000_000_000;
+    if (multiplier === null || !Number.isFinite(value)) return null;
     return Math.round(value * multiplier);
   }
 
-  const digits = text.replace(/[.,\s₫đ]/g, '');
-  if (!/^\d+$/.test(digits)) return null;
-  return Number(digits);
+  // 1.250.000 / 1,250,000 / 250000 — separators only, never a decimal point:
+  // the đồng has no fractions, so "1.500" is fifteen hundred. They must fall
+  // in groups of three, though: "1.5" was surely meant as 1.5 of something,
+  // and reading it as 15 đồng would save the wrong number without a word.
+  if (!/^\d+$/.test(text) && !/^\d{1,3}([.,]\d{3})+$/.test(text)) return null;
+  const value = Number(text.replace(/[.,]/g, ''));
+  return value > 0 ? value : null;
 }
 
 /**

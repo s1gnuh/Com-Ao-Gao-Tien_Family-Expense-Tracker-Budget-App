@@ -16,4 +16,13 @@ export interface ReceiptRow {
   note: string | null;
   occurred_at: string;
   receipt_hash: string | null;
+  /** Where the photo was stored, as `<user id>/<hash>.jpg`. */
+  receipt_url: string | null;
+}
+
+/** Private bucket holding the downscaled receipt photos. */
+export const RECEIPT_BUCKET = 'receipts';
+
+export function receiptObjectPath(userId: string, hash: string): string {
+  return `${userId}/${hash}.jpg`;
 }

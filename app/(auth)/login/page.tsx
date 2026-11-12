@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { AuthError } from '@supabase/supabase-js';
@@ -8,8 +8,15 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { createClient } from '@/lib/supabase/client';
 import { normalizeUsername, usernameToEmail, validateUsername } from '@/lib/auth';
+import { autofillAvailable, loginWithPasskey, passkeyAvailable, wasEnrolled } from '@/lib/passkey-client';
 
 type Mode = 'login' | 'register';
+type FaceIdState = 'unavailable' | 'available' | 'enrolled';
+
+/** Only same-site paths: `next` comes from the URL, so it must not send anyone off-site. */
+function safeNext(raw: string | null): string {
+  return raw && raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\') ? raw : '/';
+}
 
 /** A friendly default so most of the household never has to type the display
  * name separately — "bo" becomes "Bo", still free to edit before submitting. */
@@ -72,7 +79,9 @@ export default function LoginPage() {
 
 function AuthForm() {
   const router = useRouter();
-  const next = useSearchParams().get('next') ?? '/';
+  const params = useSearchParams();
+  const next = safeNext(params.get('next'));
+  const expired = params.get('reason') === 'expired';
 
   const [mode, setMode] = useState<Mode>('login');
   const [username, setUsername] = useState('');
@@ -84,10 +93,55 @@ function AuthForm() {
   const [displayNameEdited, setDisplayNameEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [faceId, setFaceId] = useState<FaceIdState>('unavailable');
+  const [faceIdPending, setFaceIdPending] = useState(false);
+  const autofillStarted = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void passkeyAvailable().then((available) => {
+      if (!cancelled && available) setFaceId(wasEnrolled() ? 'enrolled' : 'available');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The quiet path: tapping the username field offers the saved passkey in the
+  // keyboard bar, the way iOS offers saved passwords. Started once; pressing
+  // the Face ID button cancels it and takes over.
+  useEffect(() => {
+    if (mode !== 'login' || faceId === 'unavailable' || autofillStarted.current) return;
+    autofillStarted.current = true;
+    void (async () => {
+      if (!(await autofillAvailable())) return;
+      const result = await loginWithPasskey(true);
+      if (result.ok) finish();
+    })();
+    // finish only navigates; it must not restart the autofill request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, faceId]);
+
+  function finish() {
+    router.replace(next);
+    router.refresh();
+  }
 
   function switchMode(target: Mode) {
     setMode(target);
     setError(null);
+  }
+
+  async function handleFaceId() {
+    setError(null);
+    setFaceIdPending(true);
+    const result = await loginWithPasskey(false);
+    if (result.ok) {
+      finish();
+      return;
+    }
+    setFaceIdPending(false);
+    if (!result.cancelled) setError(result.error);
   }
 
   async function handleLogin(event: React.FormEvent) {
@@ -107,8 +161,7 @@ function AuthForm() {
       return;
     }
 
-    router.replace(next);
-    router.refresh();
+    finish();
   }
 
   async function handleRegister(event: React.FormEvent) {
@@ -145,12 +198,33 @@ function AuthForm() {
 
     // With email confirmation off Supabase signs the account in immediately, so
     // there is no pending-confirmation state to handle.
-    router.replace(next);
-    router.refresh();
+    finish();
   }
+
+  const faceIdButton = (
+    <Button
+      type="button"
+      variant={faceId === 'enrolled' ? 'primary' : 'secondary'}
+      full
+      disabled={faceIdPending || pending}
+      onClick={() => void handleFaceId()}
+    >
+      <FaceIdGlyph />
+      {faceIdPending ? 'Đang xác thực…' : 'Đăng nhập bằng Face ID'}
+    </Button>
+  );
 
   return (
     <div className="space-y-5">
+      {expired && (
+        <p
+          role="status"
+          className="rounded-xl border border-brand/40 bg-brand/10 px-4 py-3 text-sm text-fg"
+        >
+          Phiên đăng nhập đã hết hạn. Vì lý do bảo mật, bạn cần đăng nhập lại.
+        </p>
+      )}
+
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-surface p-1 ring-1 ring-border">
         <button
           type="button"
@@ -176,11 +250,21 @@ function AuthForm() {
 
       {mode === 'login' ? (
         <form onSubmit={handleLogin} className="space-y-3">
+          {/* Someone who set Face ID up on this phone gets it first; the
+              password form stays right below for everyone else. */}
+          {faceId === 'enrolled' && (
+            <>
+              {faceIdButton}
+              <Divider />
+            </>
+          )}
+
           <Input
             label="Tên đăng nhập"
             name="username"
             type="text"
-            autoComplete="username"
+            // "webauthn" lets iOS offer the saved passkey in the keyboard bar.
+            autoComplete="username webauthn"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
@@ -204,9 +288,19 @@ function AuthForm() {
             </p>
           )}
 
-          <Button type="submit" full disabled={pending}>
+          <Button type="submit" full disabled={pending || faceIdPending}>
             {pending ? 'Đang vào…' : 'Đăng nhập'}
           </Button>
+
+          {faceId === 'available' && (
+            <>
+              <Divider />
+              {faceIdButton}
+              <p className="text-center text-xs text-muted">
+                Chưa bật Face ID? Đăng nhập bằng mật khẩu một lần, rồi bật trong Cài đặt.
+              </p>
+            </>
+          )}
         </form>
       ) : (
         <form onSubmit={handleRegister} className="space-y-3">
@@ -274,5 +368,33 @@ function AuthForm() {
         </form>
       )}
     </div>
+  );
+}
+
+function Divider() {
+  return (
+    <div aria-hidden className="flex items-center gap-3 text-xs text-muted">
+      <span className="h-px flex-1 bg-border" />
+      hoặc
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+function FaceIdGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" />
+      <path d="M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 15.5a3.5 3.5 0 0 0 5 0" />
+    </svg>
   );
 }

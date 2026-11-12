@@ -249,3 +249,17 @@ export async function signOutAction() {
   await supabase.auth.signOut();
   redirect('/login');
 }
+
+/** Removes one of this person's Face ID devices; RLS refuses anyone else's. */
+export async function deletePasskey(id: string): Promise<ActionState> {
+  if (!UUID.test(id)) return { error: 'Thiết bị không hợp lệ.', ok: false };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('passkeys').delete().eq('id', id).select('id');
+
+  if (error) return { error: 'Không gỡ được thiết bị, thử lại nhé.', ok: false };
+  if (!data?.length) return { error: 'Thiết bị này không còn nữa.', ok: false };
+
+  revalidatePath('/settings');
+  return { error: null, ok: true };
+}

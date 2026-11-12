@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { RECEIPT_BUCKET } from '@/lib/receipts';
 import type { TransactionType } from '@/types';
 
 export interface EditTransactionState {
@@ -81,12 +82,21 @@ export async function deleteTransaction(
   if (!UUID.test(id)) return { error: 'Giao dịch không hợp lệ.' };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from('transactions').delete().eq('id', id).select('id');
+  const { data, error } = await supabase
+    .from('transactions')
+    .delete()
+    .eq('id', id)
+    .select('id,receipt_url');
 
   if (error) return { error: 'Không xoá được giao dịch, thử lại nhé.' };
   if (!data || data.length === 0) {
     return { error: 'Khoản này không còn nữa, có thể vừa bị xoá.' };
   }
+
+  // The photo goes with its row. Best effort: storage policy only lets the
+  // uploader delete it, so a row someone else removes leaves the file behind.
+  const photo = data[0]?.receipt_url as string | null | undefined;
+  if (photo) await supabase.storage.from(RECEIPT_BUCKET).remove([photo]);
 
   refreshViews();
   redirect('/transactions');

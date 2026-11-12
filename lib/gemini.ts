@@ -12,7 +12,8 @@ const SYSTEM_PROMPT = `Bóc tách một giao dịch tiền từ ảnh. Ảnh có
   "expense" nếu tiền RA (dấu -, "ghi nợ", "thanh toán") và với MỌI hoá đơn mua hàng.
 - occurred_at: ngày giao dịch, định dạng YYYY-MM-DD. Ngày viết kiểu DD/MM/YY thuộc thế kỷ 21: 14/10/26 nghĩa là 2026-10-14. Không đọc được thì null.
 - note: mô tả ngắn dưới 60 ký tự, tiếng Việt. Ưu tiên tên cửa hàng hoặc nội dung chuyển khoản.
-- category_guess: ĐÚNG MỘT trong: An uong, Di chuyen, Cho bup, Nha cua, Hoa don, Suc khoe, Giao duc, Giai tri, Mua sam, Khac.
+- category_guess: ĐÚNG MỘT trong: An uong, Di chuyen, Cho bup, Nha cua, Hoa don, Suc khoe, Giao duc, Giai tri, Mua sam, Bao hiem, Thu nhap, Khac.
+  · Tiền VÀO (lương, thưởng, người khác chuyển cho) luôn là Thu nhap.
 - confidence: 0 đến 1, mức chắc chắn về amount.
 
 Ảnh không chứa giao dịch tiền: amount null, confidence 0.`;

@@ -1,5 +1,6 @@
 import BudgetForm, { type BudgetRow } from '@/components/settings/BudgetForm';
 import ProfileForm from '@/components/settings/ProfileForm';
+import PasskeySettings, { type PasskeyRow } from '@/components/settings/PasskeySettings';
 import PushSettings from '@/components/settings/PushSettings';
 import { signOutAction } from './actions';
 import { createClient, readSessionFast } from '@/lib/supabase/server';
@@ -17,24 +18,33 @@ export default async function SettingsPage() {
   const session = await readSessionFast();
   const { from, to } = monthRange();
 
-  const [profileResult, walletsResult, categoriesResult, budgetsResult, spendResult, aiResult, notifResult] =
-    await Promise.all([
+  const [
+    profileResult,
+    walletsResult,
+    categoriesResult,
+    budgetsResult,
+    spendResult,
+    aiResult,
+    notifResult,
+    passkeysResult,
+  ] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', session.id ?? '').maybeSingle(),
       supabase.from('wallets').select('id,name,type').order('type').order('name'),
       supabase.from('categories').select('*').order('kind').order('name'),
       supabase.from('budgets').select('*').eq('period', 'monthly'),
-      supabase
-        .from('transactions')
-        .select('wallet_id,category_id,amount')
-        .eq('type', 'expense')
-        .gte('occurred_at', from)
-        .lte('occurred_at', to),
+      // Summed in Postgres: one row per wallet and category instead of every
+      // expense of the month shipped here to be added up.
+      supabase.rpc('category_breakdown', { p_from: from, p_to: to }),
       supabase.rpc('ai_usage_today').maybeSingle(),
       supabase
         .from('notification_preferences')
         .select('enabled,remind_hour')
         .eq('user_id', session.id ?? '')
         .maybeSingle(),
+      supabase
+        .from('passkeys')
+        .select('id,device_name,created_at,last_used_at')
+        .order('created_at', { ascending: false }),
     ]);
 
   const profile = profileResult.data as Profile | null;
@@ -43,16 +53,13 @@ export default async function SettingsPage() {
   const budgets = (budgetsResult.data ?? []) as Budget[];
   const spend = (spendResult.data ?? []) as {
     wallet_id: string;
-    category_id: string | null;
-    amount: number;
+    category_id: string;
+    spent: number;
   }[];
 
-  const spentByKey = new Map<string, number>();
-  for (const row of spend) {
-    if (!row.category_id) continue;
-    const key = `${row.wallet_id}:${row.category_id}`;
-    spentByKey.set(key, (spentByKey.get(key) ?? 0) + Number(row.amount));
-  }
+  const spentByKey = new Map(
+    spend.map((row) => [`${row.wallet_id}:${row.category_id}`, Number(row.spent)]),
+  );
 
   const rows: Record<string, BudgetRow> = {};
   for (const wallet of wallets) {
@@ -86,6 +93,11 @@ export default async function SettingsPage() {
       <BudgetForm wallets={wallets} categories={categories} rows={rows} />
 
       {ai && <AiQuotaCard used={Number(ai.calls)} resetsAt={ai.resets_at} />}
+
+      {/* Absent until the latest schema.sql has run: no table, no card. */}
+      {!passkeysResult.error && (
+        <PasskeySettings passkeys={(passkeysResult.data ?? []) as PasskeyRow[]} />
+      )}
 
       {!notifResult.error && (
         <PushSettings

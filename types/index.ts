@@ -45,7 +45,10 @@ export interface Transaction {
   note: string | null;
   occurred_at: string;
   source: TransactionSource;
+  /** Storage path of the receipt photo inside the private `receipts` bucket. */
   receipt_url: string | null;
+  /** SHA-256 of the original photo, used to refuse the same bill twice. */
+  receipt_hash: string | null;
   created_at: string;
 }
 
@@ -115,6 +118,8 @@ export interface ParsedReceipt {
   category_guess: string | null;
   occurred_at: string | null;
   confidence: number;
+  /** Where the photo was kept, when it could be; null otherwise. */
+  receipt_path?: string | null;
 }
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };

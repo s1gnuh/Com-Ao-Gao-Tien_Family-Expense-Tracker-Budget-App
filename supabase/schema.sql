@@ -157,6 +157,35 @@ create table if not exists public.notification_preferences (
   last_sent_on date
 );
 
+-- Face ID / Touch ID sign-in (WebAuthn passkeys). One row per device a person
+-- has enrolled. Only the public key is stored: the private half never leaves
+-- the phone's secure enclave, so this table is worthless to anyone who reads it.
+create table if not exists public.passkeys (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  credential_id text not null unique,
+  public_key text not null,
+  counter bigint not null default 0,
+  transports text[],
+  device_name text,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
+
+create index if not exists passkeys_user_idx on public.passkeys (user_id);
+
+-- Single-use WebAuthn challenges. A row is deleted the moment it is checked, so
+-- a captured Face ID answer cannot be replayed — iCloud passkeys always report a
+-- signature counter of 0, which leaves this as the only replay guard there is.
+-- Read and written only by the server with the service key: no policies below.
+create table if not exists public.webauthn_challenges (
+  id uuid primary key default gen_random_uuid(),
+  challenge text not null,
+  user_id uuid references public.profiles (id) on delete cascade,
+  kind text not null check (kind in ('register', 'login')),
+  expires_at timestamptz not null default now() + interval '5 minutes'
+);
+
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
   wallet_id uuid not null references public.wallets (id) on delete cascade,
@@ -295,6 +324,8 @@ alter table public.budgets enable row level security;
 alter table public.ai_usage enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.notification_preferences enable row level security;
+alter table public.passkeys enable row level security;
+alter table public.webauthn_challenges enable row level security;
 
 -- Profiles: the four household members can see each other (shared-wallet rows
 -- show who added them), but only edit themselves.
@@ -381,6 +412,21 @@ create policy push_subscriptions_own on public.push_subscriptions
 drop policy if exists notification_preferences_own on public.notification_preferences;
 create policy notification_preferences_own on public.notification_preferences
   for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Passkeys: each person sees, adds and removes only their own devices. Signing
+-- in with one happens before there is a session, so that lookup runs on the
+-- server with the service key; nobody can list another member's devices.
+drop policy if exists passkeys_select_own on public.passkeys;
+create policy passkeys_select_own on public.passkeys
+  for select to authenticated using (user_id = auth.uid());
+
+drop policy if exists passkeys_insert_own on public.passkeys;
+create policy passkeys_insert_own on public.passkeys
+  for insert to authenticated with check (user_id = auth.uid());
+
+drop policy if exists passkeys_delete_own on public.passkeys;
+create policy passkeys_delete_own on public.passkeys
+  for delete to authenticated using (user_id = auth.uid());
 
 -- Budgets follow wallet access; the shared budget is set collaboratively.
 drop policy if exists budgets_select on public.budgets;
@@ -547,18 +593,31 @@ as $$
   order by 5 desc;
 $$;
 
-create or replace function public.category_breakdown(
+-- Spending per wallet and category, which is exactly the grain the budget
+-- screen compares limits at. Dropped first because the wallet column changes
+-- the return type, which CREATE OR REPLACE cannot do.
+drop function if exists public.category_breakdown(date, date, uuid);
+
+create function public.category_breakdown(
   p_from date,
   p_to date,
   p_wallet uuid default null
 )
-returns table (category_id uuid, name text, icon text, kind category_kind, spent numeric)
+returns table (
+  wallet_id uuid,
+  category_id uuid,
+  name text,
+  icon text,
+  kind category_kind,
+  spent numeric
+)
 language sql
 stable
 security invoker
 set search_path = public
 as $$
   select
+    t.wallet_id,
     c.id,
     c.name,
     c.icon,
@@ -569,9 +628,51 @@ as $$
   where t.type = 'expense'
     and t.occurred_at between p_from and p_to
     and (p_wallet is null or t.wallet_id = p_wallet)
-  group by c.id, c.name, c.icon, c.kind
-  order by 5 desc;
+  group by t.wallet_id, c.id, c.name, c.icon, c.kind
+  order by 6 desc;
 $$;
+
+-- ---------------------------------------------------------------- receipts
+
+-- The photo behind each AI-read row, downscaled to a ~200-400 KB JPEG, so the
+-- free tier's 1 GB holds a few thousand. Private: there is no public URL, only
+-- short-lived signed links handed out to someone allowed to see the row.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('receipts', 'receipts', false, 4194304, array['image/jpeg'])
+on conflict (id) do nothing;
+
+create index if not exists transactions_receipt_url_idx on public.transactions (receipt_url)
+  where receipt_url is not null;
+
+-- Files live under "<uploader id>/<sha256>.jpg". You write only your own
+-- folder; you read your own folder plus any photo attached to a row you can
+-- already see — so the family fund's receipts are visible to all four, and a
+-- personal wallet's stay with its owner, exactly like the rows themselves (the
+-- transactions RLS inside the subquery is what draws that line).
+drop policy if exists receipts_read on storage.objects;
+create policy receipts_read on storage.objects
+  for select to authenticated using (
+    bucket_id = 'receipts' and (
+      (storage.foldername(name))[1] = auth.uid()::text
+      or exists (select 1 from public.transactions t where t.receipt_url = objects.name)
+    )
+  );
+
+drop policy if exists receipts_insert_own on storage.objects;
+create policy receipts_insert_own on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists receipts_update_own on storage.objects;
+create policy receipts_update_own on storage.objects
+  for update to authenticated
+  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists receipts_delete_own on storage.objects;
+create policy receipts_delete_own on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- ---------------------------------------------------------------- realtime
 

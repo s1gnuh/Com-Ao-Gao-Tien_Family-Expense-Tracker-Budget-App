@@ -3,9 +3,10 @@
 import { useActionState, useEffect, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import AmountInput from '@/components/ui/AmountInput';
 import { saveBill, type BillState } from '@/app/(dashboard)/bills/actions';
 import { CYCLE_LABEL } from '@/lib/bills';
-import { formatNumber, formatVND, parseAmountInput } from '@/lib/formatters';
+import { formatNumber, parseAmountInput } from '@/lib/formatters';
 import type { BillCycle, Category, Profile, RecurringBill, Wallet } from '@/types';
 
 const INITIAL: BillState = { error: null, ok: false };
@@ -76,21 +77,14 @@ export default function BillForm({
         onChange={(event) => setName(event.target.value)}
       />
 
-      <div>
-        <span className="mb-1.5 block text-sm font-medium text-muted">Số tiền mỗi kỳ</span>
-        <input
-          type="text"
-          inputMode="decimal"
-          required
-          placeholder="1tr2, 350k…"
-          value={amountRaw}
-          onChange={(event) => setAmountRaw(event.target.value)}
-          className="tabular w-full rounded-2xl border border-border bg-bg px-4 py-3 text-lg font-semibold outline-none focus:border-brand"
-        />
-        <span className="mt-1.5 block text-xs text-muted">
-          {amount === null ? 'Gõ 350k hoặc 1tr2 cũng được' : formatVND(amount)}
-        </span>
-      </div>
+      <AmountInput
+        label="Số tiền mỗi kỳ"
+        size="md"
+        required
+        placeholder="1tr2, 350k…"
+        value={amountRaw}
+        onChange={setAmountRaw}
+      />
 
       <div>
         <span className="mb-1.5 block text-sm font-medium text-muted">Chu kỳ</span>

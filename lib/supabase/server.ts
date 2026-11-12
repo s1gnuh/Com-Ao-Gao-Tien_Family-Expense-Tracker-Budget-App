@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { readStoredSession } from '@/lib/auth';
+import { AUTH_COOKIE_OPTIONS, readStoredSession } from '@/lib/supabase/cookies';
 
 type CookiesToSet = { name: string; value: string; options: CookieOptions }[];
 

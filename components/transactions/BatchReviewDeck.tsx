@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import AmountInput from '@/components/ui/AmountInput';
+import { findIncomeCategory } from '@/lib/categories';
 import { createTransactionsBatch } from '@/app/(dashboard)/transactions/add/actions';
 import { formatDate, formatVND, parseAmountInput } from '@/lib/formatters';
 import { defaultWalletId, walletsForType } from '@/lib/wallets';
@@ -14,6 +16,8 @@ export interface ReceiptDraft {
   hash: string;
   /** The downscaled upload itself. The deck owns its preview URL. */
   blob: Blob;
+  /** Where the server kept the photo, or null when it could not. */
+  receiptPath: string | null;
   amount: number;
   type: TransactionType;
   note: string;
@@ -214,6 +218,7 @@ export default function BatchReviewDeck({
       note: draft.note.trim() || null,
       occurred_at: draft.occurredAt,
       receipt_hash: draft.hash,
+      receipt_url: draft.receiptPath,
     }));
 
     startSaving(async () => {
@@ -559,13 +564,17 @@ function DraftEditor({
 
   const amount = parseAmountInput(amountRaw);
   const visibleWallets = walletsForType(wallets, type);
+  const incomeCategory = findIncomeCategory(categories);
 
-  /** Same rule as the single-entry form: income follows to a personal wallet. */
+  /** Same rules as the single-entry form: income follows to a personal wallet and "Thu nhập". */
   function chooseType(next: TransactionType) {
     setType(next);
     if (!walletsForType(wallets, next).some((wallet) => wallet.id === walletId)) {
       setWalletId(defaultWalletId(wallets, next, currentUserId));
     }
+    if (!incomeCategory) return;
+    if (next === 'income' && !categoryId) setCategoryId(incomeCategory.id);
+    if (next === 'expense' && categoryId === incomeCategory.id) setCategoryId('');
   }
 
   return (
@@ -602,17 +611,7 @@ function DraftEditor({
       </div>
 
       <div className="mt-3">
-        <span className="mb-1.5 block text-sm font-medium text-muted">Số tiền</span>
-        <input
-          type="text"
-          inputMode="decimal"
-          value={amountRaw}
-          onChange={(event) => setAmountRaw(event.target.value)}
-          className="tabular w-full rounded-xl border border-border bg-surface px-4 py-3 text-2xl font-semibold outline-none focus:border-brand"
-        />
-        <span className="mt-1.5 block text-sm text-muted">
-          {amount === null ? 'Gõ 35k hoặc 1tr2 cũng được' : formatVND(amount)}
-        </span>
+        <AmountInput value={amountRaw} onChange={setAmountRaw} size="md" />
       </div>
 
       <div className="mt-3">

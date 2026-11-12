@@ -8,12 +8,26 @@ import type { TransactionSource, TransactionType } from '@/types';
 
 export interface CreateTransactionState {
   error: string | null;
+  /** Set when "Lưu & nhập tiếp" saved a row and the form should reset in place. */
+  saved?: { at: number; amount: number; type: TransactionType };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const MAX_AMOUNT = 10_000_000_000;
+
+/**
+ * A receipt photo may only be filed under the uploader's own folder, which is
+ * also the only place storage policy lets them write. Anything else is dropped
+ * rather than pointing a row at somebody else's picture.
+ */
+function receiptPath(raw: unknown, userId: string): string | null {
+  const value = String(raw ?? '');
+  const prefix = `${userId}/`;
+  if (!UUID.test(userId) || !value.startsWith(prefix)) return null;
+  return /^[0-9a-f]{64}\.jpg$/.test(value.slice(prefix.length)) ? value : null;
+}
 
 export async function createTransaction(
   _previous: CreateTransactionState,
@@ -50,6 +64,7 @@ export async function createTransaction(
 
   const hashRaw = String(formData.get('receipt_hash') ?? '');
   const receiptHash = HASH.test(hashRaw) ? hashRaw : null;
+  const again = formData.get('intent') === 'again';
 
   // RLS re-checks wallet access and that created_by matches the caller.
   const { error } = await supabase.from('transactions').insert({
@@ -62,6 +77,7 @@ export async function createTransaction(
     occurred_at: occurredAt,
     source: source === 'ai_receipt' ? 'ai_receipt' : 'manual',
     receipt_hash: receiptHash,
+    receipt_url: receiptPath(formData.get('receipt_url'), session.id),
   });
 
   // 23514 is the check violation enforce_income_is_personal() raises; it is the
@@ -76,7 +92,12 @@ export async function createTransaction(
   }
 
   revalidatePath('/transactions');
+  revalidatePath('/wallets');
   revalidatePath('/');
+
+  // Entering a whole evening's receipts one after another should not mean a
+  // trip to the list and back for each of them.
+  if (again) return { error: null, saved: { at: Date.now(), amount, type } };
   redirect('/transactions');
 }
 
@@ -124,6 +145,7 @@ export async function createTransactionsBatch(
       occurred_at: occurredAt,
       source: 'ai_receipt' as const,
       receipt_hash: HASH.test(String(row.receipt_hash)) ? row.receipt_hash : null,
+      receipt_url: receiptPath(row.receipt_url, session.id),
     });
   }
 
@@ -138,6 +160,7 @@ export async function createTransactionsBatch(
   }
 
   revalidatePath('/transactions');
+  revalidatePath('/wallets');
   revalidatePath('/');
   redirect('/transactions');
 }

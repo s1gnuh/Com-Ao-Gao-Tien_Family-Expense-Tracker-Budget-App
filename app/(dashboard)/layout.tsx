@@ -1,6 +1,7 @@
 import Navigation from '@/components/Navigation';
 import OnboardingTour from '@/components/OnboardingTour';
 import RealtimeSync from '@/components/RealtimeSync';
+import SessionGuard from '@/components/SessionGuard';
 import SplashScreen from '@/components/SplashScreen';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <Navigation />
       <RealtimeSync />
+      <SessionGuard />
       <SplashScreen />
       <OnboardingTour />
     </div>
