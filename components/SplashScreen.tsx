@@ -2,14 +2,13 @@
 
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 
-/** Every tab, warmed while the splash plays so none of them loads on arrival. */
-const ROUTES = ['/', '/transactions', '/wallets', '/settings', '/transactions/add'];
-
-const MIN_MS = 4500;
-/** Never hold the app hostage to a slow network. */
-const MAX_MS = 7000;
+/**
+ * Long enough for the logo's entrance (900ms) to land, and no longer. It used
+ * to hold for 4.5s while the other tabs prefetched; RouteWarmer now does that
+ * in the background, so nothing here is worth waiting for.
+ */
+const MIN_MS = 1100;
 const SESSION_KEY = 'cagt-splash-shown';
 
 const GRAINS = [
@@ -22,7 +21,6 @@ const GRAINS = [
 ];
 
 export default function SplashScreen() {
-  const router = useRouter();
   // Rendered on the server so it covers the very first paint. Starting hidden
   // and revealing after hydration would show the dashboard for a moment and
   // then throw a splash over it, which reads as a glitch. A blocking script in
@@ -47,37 +45,22 @@ export default function SplashScreen() {
       return;
     }
 
-    const openedAt = Date.now();
-
-    // Prefetch pulls each route's rendered payload — queries already run — into
-    // the client router cache, so arriving at a tab costs no round trip.
-    const warmed = Promise.all(ROUTES.map((route) => Promise.resolve(router.prefetch(route))));
-
-    let leaveTimer: ReturnType<typeof setTimeout>;
-    const finish = () => {
-      const held = Date.now() - openedAt;
-      leaveTimer = setTimeout(() => {
-        try {
-          sessionStorage.setItem(SESSION_KEY, '1');
-        } catch {
-          // Ignored: at worst the splash plays again next launch.
-        }
-        setPhase('leaving');
-        setTimeout(() => setPhase('hidden'), 420);
-      }, Math.max(0, MIN_MS - held));
-    };
-
-    const cap = setTimeout(finish, MAX_MS);
-    void warmed.then(() => {
-      clearTimeout(cap);
-      finish();
-    });
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+    const leaveTimer = setTimeout(() => {
+      try {
+        sessionStorage.setItem(SESSION_KEY, '1');
+      } catch {
+        // Ignored: at worst the splash plays again next launch.
+      }
+      setPhase('leaving');
+      hideTimer = setTimeout(() => setPhase('hidden'), 320);
+    }, MIN_MS);
 
     return () => {
-      clearTimeout(cap);
       clearTimeout(leaveTimer);
+      if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [router]);
+  }, []);
 
   if (phase === 'hidden') return null;
 
@@ -90,7 +73,7 @@ export default function SplashScreen() {
       className="splash-failsafe fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden bg-bg"
       style={
         phase === 'leaving'
-          ? { animation: 'cagt-fade-out 400ms ease-in forwards' }
+          ? { animation: 'cagt-fade-out 300ms ease-in forwards' }
           : undefined
       }
     >
@@ -142,14 +125,14 @@ export default function SplashScreen() {
 
         <p
           className="relative mt-6 text-center text-sm font-medium text-muted"
-          style={{ animation: 'cagt-rise 600ms ease-out 700ms both' }}
+          style={{ animation: 'cagt-rise 400ms ease-out 250ms both' }}
         >
           Đang dọn sổ chi tiêu của nhà mình…
         </p>
 
         <div
           className="relative mt-5 flex gap-2"
-          style={{ animation: 'cagt-rise 600ms ease-out 900ms both' }}
+          style={{ animation: 'cagt-rise 400ms ease-out 400ms both' }}
           aria-hidden
         >
           {[0, 1, 2].map((index) => (

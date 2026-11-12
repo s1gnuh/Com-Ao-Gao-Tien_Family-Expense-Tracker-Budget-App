@@ -8,6 +8,8 @@ import { saveBill, type BillState } from '@/app/(dashboard)/bills/actions';
 import { CYCLE_LABEL } from '@/lib/bills';
 import { formatNumber, parseAmountInput } from '@/lib/formatters';
 import type { BillCycle, Category, Profile, RecurringBill, Wallet } from '@/types';
+import { useWarmAfter } from '@/lib/use-refresh';
+import { markLocalMutation } from '@/lib/route-warm';
 
 const INITIAL: BillState = { error: null, ok: false };
 const CYCLES: BillCycle[] = ['monthly', 'quarterly', 'yearly'];
@@ -28,6 +30,7 @@ export default function BillForm({
   onDone,
 }: BillFormProps) {
   const [state, formAction, pending] = useActionState(saveBill, INITIAL);
+  useWarmAfter(state, INITIAL);
 
   const [name, setName] = useState(initial?.name ?? '');
   const [amountRaw, setAmountRaw] = useState(
@@ -56,7 +59,7 @@ export default function BillForm({
   const amount = parseAmountInput(amountRaw);
 
   return (
-    <form action={formAction} className="card space-y-4">
+    <form action={formAction} onSubmit={markLocalMutation} className="card space-y-4">
       <h2 className="font-semibold">{initial ? 'Sửa hoá đơn' : 'Hoá đơn định kỳ mới'}</h2>
 
       {initial && <input type="hidden" name="id" value={initial.id} />}

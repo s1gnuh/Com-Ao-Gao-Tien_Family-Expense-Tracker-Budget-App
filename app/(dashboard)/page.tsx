@@ -149,6 +149,7 @@ export default async function DashboardPage() {
       {pendingBills.length > 0 && (
         <Link
           href="/bills"
+          prefetch={false}
           className="tap flex items-center gap-3 rounded-card border border-expense/30 bg-expense/10 p-4"
         >
           <span aria-hidden className="text-xl">
@@ -228,6 +229,7 @@ export default async function DashboardPage() {
 
       <Link
         href="/transactions"
+        prefetch={false}
         className="tap block rounded-xl py-3 text-center text-sm font-medium text-brand-strong"
       >
         Xem tất cả giao dịch

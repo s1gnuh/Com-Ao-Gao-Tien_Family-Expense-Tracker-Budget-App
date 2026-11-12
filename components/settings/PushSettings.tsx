@@ -9,6 +9,7 @@ import {
   updateNotificationPrefs,
 } from '@/app/(dashboard)/settings/actions';
 import { isStandalone, pushSupported, urlBase64ToUint8Array } from '@/lib/push-client';
+import { requestWarm } from '@/lib/route-warm';
 
 interface PushSettingsProps {
   initialEnabled: boolean;
@@ -126,6 +127,7 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
       setEnabled(true);
       setGate('ready');
       setNote({ tone: 'ok', text: 'Đã bật nhắc nhở!' });
+      requestWarm();
     } catch {
       setNote({ tone: 'error', text: 'Không bật được thông báo, thử lại nhé.' });
     } finally {
@@ -145,6 +147,7 @@ export default function PushSettings({ initialEnabled, initialHour }: PushSettin
       ]);
       setEnabled(false);
       setNote({ tone: 'ok', text: 'Đã tắt nhắc nhở.' });
+      requestWarm();
     } catch {
       setNote({ tone: 'error', text: 'Không tắt được, thử lại nhé.' });
     } finally {

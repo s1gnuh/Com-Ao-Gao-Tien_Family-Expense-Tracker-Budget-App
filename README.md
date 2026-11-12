@@ -147,6 +147,10 @@ Cơ chế: `@simplewebauthn` xác minh chữ ký từ Secure Enclave, rồi máy
 - **Cả hệ thống dùng một cuốn lịch: giờ Việt Nam.** Vercel chạy hàm ở UTC và Supabase lưu ở UTC, nên `new Date()` cùng `current_date` trả về *hôm qua* trong khoảng 0–7 giờ sáng giờ Việt Nam — và trả về *tháng trước* vào mùng 1, đúng lúc cả nhà mở xem tổng kết. Mọi câu hỏi "hôm nay là ngày nào" đều đi qua `householdParts()` ở phía ứng dụng và `household_today()` ở phía cơ sở dữ liệu. Ngày tháng dạng `YYYY-MM-DD` được neo ở giữa trưa UTC chứ không phải nửa đêm, để không múi giờ nào kéo lệch được một ngày.
 - **Thẻ vuốt không đi qua React.** Mỗi lần ngón tay nhúc nhích mà gọi `setState` là một lần render lại cả chồng thẻ. Thay vào đó cử chỉ ghi thẳng `transform` vào DOM qua `ref` và không đọc bất kỳ thuộc tính layout nào, nên trình duyệt chỉ việc hợp thành (composite). Đo trên 200 sự kiện `pointermove` với CPU bị bóp 4 lần: **0 lần reflow**, không có tác vụ dài, ~1,2 ms kịch bản mỗi sự kiện.
 - **Số dư tính bằng view trong Postgres**, không cộng ở máy khách — nếu không, mỗi lần mở app điện thoại phải tải về toàn bộ lịch sử giao dịch chỉ để cộng lại.
+- **Chuyển tab không chờ máy chủ.** `RouteWarmer` tải sẵn *đầy đủ dữ liệu* của mọi tab vào cache router phía trình duyệt. Cần nó vì hai lẽ: `<Link>` của Next chỉ prefetch tới khung loading với trang động, và **mỗi lần lưu (server action có `revalidatePath`) hay `router.refresh()` đều xoá sạch cache đó** mà không tự tải lại. `RouteWarmer` nạp lại ngay sau mỗi lần như vậy (sau khi lưu, sau khi realtime làm mới, khi quay lại app), cộng một nhịp kiểm tra 4 giây làm lưới an toàn; hỏi lại một trang đã có trong cache chỉ là một lần tra Map. `staleTimes` được nới lên 5–10 phút vì độ tươi đã do realtime lo.
+- **Không làm mới hai lần cho cùng một thay đổi.** Thay đổi do chính máy này lưu sẽ quay về dưới dạng sự kiện realtime sau khoảng 0,5–1 giây; `RealtimeSync` bỏ qua "tiếng vọng" đó (trong 8 giây, chỉ với dòng do chính mình tạo), vì lúc lưu đã vẽ lại màn hình rồi.
+- **RLS theo tập hợp, không theo từng dòng.** Policy dạng `wallet_id in (select public.my_wallet_ids())` để Postgres tính danh sách ví được phép xem một lần mỗi câu truy vấn (`hashed SubPlan`), thay vì gọi hàm cho mỗi giao dịch — quan trọng vì view số dư cộng toàn bộ lịch sử.
+- **Đọc hoá đơn: không chờ thứ không cần chờ.** Xác thực (`getClaims()`, kiểm chữ ký tại chỗ nếu được) chạy song song với kiểm tra trùng; lưu ảnh chạy song song với Gemini; ghi lượt dùng và dọn ảnh thừa chạy trong `after()`, sau khi đã trả kết quả. Chọn nhiều ảnh thì ảnh nào thu nhỏ xong được gửi đi luôn.
 - **Middleware không gọi `getUser()`** ở mỗi request. Đó là một vòng mạng 300–400ms trước khi trang kịp render. Nó đọc hạn dùng ngay trong cookie, chỉ liên lạc với Supabase khi token sắp hết hạn. Bảo mật vẫn do RLS đảm nhiệm ở từng truy vấn.
 - **24 Cron Job thay vì một job chạy mỗi giờ.** Gói Hobby của Vercel chỉ cho mỗi Cron Job chạy tối đa 1 lần/ngày — không có lựa chọn "mỗi giờ" ở mức miễn phí. Khai 24 job cố định, mỗi job đúng một giờ UTC, đều gọi chung một route: cộng lại thành độ phân giải theo giờ mà không vi phạm giới hạn, không cần Supabase `pg_cron`/`pg_net` (chưa chắc có sẵn tuỳ dự án) hay dịch vụ cron ngoài nào có phí.
 - **Thông báo đẩy dùng khoá riêng của ứng dụng (VAPID), không qua Firebase hay OneSignal.** `web-push` ký gói tin bằng cặp khoá tự sinh, gửi thẳng tới endpoint mà trình duyệt cấp — không dịch vụ trung gian nào biết nội dung thông báo, và không giới hạn số lượt theo gói miễn phí của ai khác ngoài chính trình duyệt/push service của hệ điều hành.
@@ -169,6 +173,8 @@ lib/
   push.ts              gửi Web Push, dựng nội dung nhắc nhở (dùng chung cron + nút test)
   push-client.ts        phần việc chỉ chạy được ở trình duyệt (khoá VAPID, phát hiện đã cài app)
   supabase/            client cho trình duyệt và máy chủ, quy tắc cookie phiên
+  route-warm.ts        danh sách tab cần tải sẵn, tín hiệu "cache vừa bị xoá"
+  use-refresh.ts       router.refresh() rồi tải lại các tab khi nó xong
   webauthn.ts          Face ID: challenge một lần, đổi passkey thành phiên Supabase
   passkey-client.ts    phần Face ID chạy ở trình duyệt
 public/sw.js           service worker: nhận push, mở app khi chạm thông báo
@@ -178,6 +184,8 @@ vercel.json             24 Cron Job gửi nhắc nhở
 ```
 
 ## Giới hạn đã biết
+
+- **Vùng function của Vercel phải khớp vùng của Supabase.** `vercel.json` đặt `"regions": ["sin1"]` (Singapore) cho khớp project Supabase ở `ap-southeast-1`. Mặc định Vercel chạy ở Washington (`iad1`), khi đó mỗi thao tác phải đi Việt Nam → Mỹ → Singapore → Mỹ → Việt Nam. Nếu chuyển Supabase sang vùng khác, đổi giá trị này theo (gói Hobby được chọn một vùng).
 
 - Build trên máy **Windows cần Node 22 hoặc 24 LTS**. Node 26 trên Windows trả lỗi `EISDIR` cho `readlink` lên file thường và webpack của Next 15 không xử lý được. Vercel không bị ảnh hưởng.
 - Ảnh hoá đơn của một giao dịch do người khác xoá sẽ còn lại trong Storage — chính sách chỉ cho người tải lên xoá ảnh của mình.

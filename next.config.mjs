@@ -3,10 +3,14 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   experimental: {
-    // Next 15 defaults dynamic routes to 0s, so every tab switch refetched the
-    // whole page. RealtimeSync invalidates this on any household change, so the
-    // window only ever serves data nobody has touched.
-    staleTimes: { dynamic: 30, static: 180 },
+    // How long the client may reuse a page it already has. Next 15 defaults
+    // dynamic routes to 0s, so every tab switch refetched the whole page.
+    // These can be long because staleness is handled elsewhere: RealtimeSync
+    // refreshes on any household change (and on return from background if the
+    // socket dropped), and every save revalidates. `static` governs the full
+    // prefetches RouteWarmer makes of every tab; `dynamic` governs pages
+    // reached by plain navigation.
+    staleTimes: { dynamic: 300, static: 600 },
   },
   async headers() {
     return [

@@ -31,7 +31,7 @@ export default async function AddTransactionPage() {
   return (
     <div className="space-y-5 py-4">
       <header className="flex items-center gap-3">
-        <Link href="/transactions" aria-label="Quay lại" className="tap text-xl text-muted">
+        <Link href="/transactions" prefetch={false} aria-label="Quay lại" className="tap text-xl text-muted">
           ←
         </Link>
         <h1 className="text-2xl font-semibold">Thêm giao dịch</h1>

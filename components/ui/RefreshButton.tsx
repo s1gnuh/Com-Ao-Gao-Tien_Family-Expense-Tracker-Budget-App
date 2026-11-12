@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { useRefresh } from '@/lib/use-refresh';
 
 /** Long enough that a fast refresh still reads as an action, not a flicker. */
 const MIN_SPIN_MS = 650;
 
 export default function RefreshButton({ label = 'Làm mới số liệu' }: { label?: string }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  // Refills the other tabs too once the refresh lands, not just this one.
+  const { refresh, pending } = useRefresh();
   const [spinning, setSpinning] = useState(false);
   const [done, setDone] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -21,9 +21,7 @@ export default function RefreshButton({ label = 'Làm mới số liệu' }: { la
     setSpinning(true);
     const startedAt = Date.now();
 
-    startTransition(() => {
-      router.refresh();
-    });
+    refresh();
 
     // router.refresh() resolves through the transition, but a sub-100ms round
     // trip would blink the icon; hold the spin to the floor instead.

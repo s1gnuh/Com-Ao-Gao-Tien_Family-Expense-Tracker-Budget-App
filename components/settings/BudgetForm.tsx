@@ -5,6 +5,8 @@ import Button from '@/components/ui/Button';
 import { saveBudgets, type ActionState } from '@/app/(dashboard)/settings/actions';
 import { formatNumber, formatVND, parseAmountInput } from '@/lib/formatters';
 import type { Category, Wallet } from '@/types';
+import { useWarmAfter } from '@/lib/use-refresh';
+import { markLocalMutation } from '@/lib/route-warm';
 
 const INITIAL: ActionState = { error: null, ok: false };
 
@@ -23,6 +25,7 @@ interface BudgetFormProps {
 
 export default function BudgetForm({ wallets, categories, rows }: BudgetFormProps) {
   const [state, formAction, pending] = useActionState(saveBudgets, INITIAL);
+  useWarmAfter(state, INITIAL);
   const [walletId, setWalletId] = useState(wallets[0]?.id ?? '');
   const [open, setOpen] = useState(false);
 
@@ -67,7 +70,7 @@ export default function BudgetForm({ wallets, categories, rows }: BudgetFormProp
   }
 
   return (
-    <form action={formAction} className="card space-y-3">
+    <form action={formAction} onSubmit={markLocalMutation} className="card space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">Hạn mức tháng</h2>
         <button

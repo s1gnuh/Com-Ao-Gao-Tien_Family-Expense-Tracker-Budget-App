@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -55,12 +56,18 @@ const TABS = [
 
 export default function Navigation() {
   const pathname = usePathname();
-  const addActive = pathname.startsWith('/transactions/add');
+  // The tab lights up on the tap itself, not when the next page has arrived:
+  // even from cache that is a frame or two later, and on a cold tab it is the
+  // only sign the tap landed.
+  const [tapped, setTapped] = useState<string | null>(null);
+  useEffect(() => setTapped(null), [pathname]);
+  const current = tapped ?? pathname;
+  const addActive = current.startsWith('/transactions/add');
 
   function isActive(href: string) {
-    if (href === '/') return pathname === '/';
-    if (href === '/transactions') return pathname === '/transactions';
-    return pathname.startsWith(href);
+    if (href === '/') return current === '/';
+    if (href === '/transactions') return current === '/transactions';
+    return current.startsWith(href);
   }
 
   const [first, second, third, fourth] = TABS;
@@ -72,12 +79,16 @@ export default function Navigation() {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <ul className="mx-auto flex max-w-md items-stretch" style={{ height: 'var(--nav-h)' }}>
-        <Tab {...first} active={isActive(first.href)} />
-        <Tab {...second} active={isActive(second.href)} />
+        <Tab {...first} active={isActive(first.href)} onTap={setTapped} />
+        <Tab {...second} active={isActive(second.href)} onTap={setTapped} />
 
         <li className="flex-1">
           <Link
             href="/transactions/add"
+            // RouteWarmer prefetches every tab in full; Link's own prefetch only
+            // reaches the loading skeleton and would just duplicate requests.
+            prefetch={false}
+            onClick={() => setTapped('/transactions/add')}
             aria-label="Nhập nhanh giao dịch"
             aria-current={addActive ? 'page' : undefined}
             className="tap flex h-full flex-col items-center justify-center gap-1"
@@ -97,8 +108,8 @@ export default function Navigation() {
           </Link>
         </li>
 
-        <Tab {...third} active={isActive(third.href)} />
-        <Tab {...fourth} active={isActive(fourth.href)} />
+        <Tab {...third} active={isActive(third.href)} onTap={setTapped} />
+        <Tab {...fourth} active={isActive(fourth.href)} onTap={setTapped} />
       </ul>
     </nav>
   );
@@ -109,13 +120,16 @@ interface TabProps {
   label: string;
   Icon: () => React.JSX.Element;
   active: boolean;
+  onTap: (href: string) => void;
 }
 
-function Tab({ href, label, Icon, active }: TabProps) {
+function Tab({ href, label, Icon, active, onTap }: TabProps) {
   return (
     <li className="flex-1">
       <Link
         href={href}
+        prefetch={false}
+        onClick={() => onTap(href)}
         aria-current={active ? 'page' : undefined}
         className={`tap flex h-full flex-col items-center justify-center gap-0.5 ${
           active ? 'text-brand-strong' : 'text-muted'

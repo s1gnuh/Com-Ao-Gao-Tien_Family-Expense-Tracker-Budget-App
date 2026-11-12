@@ -1,16 +1,18 @@
 'use client';
 
 import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import AmountInput from '@/components/ui/AmountInput';
 import Toast, { type ToastTone } from '@/components/ui/Toast';
-import BatchReviewDeck, { type ReceiptDraft } from '@/components/transactions/BatchReviewDeck';
+import type { ReceiptDraft } from '@/components/transactions/BatchReviewDeck';
 import { downscaleImage, hashImage } from '@/lib/image';
 import { MAX_RECEIPT_BATCH } from '@/lib/receipts';
 import { formatDate, formatSigned, formatVND, parseAmountInput, todayInput } from '@/lib/formatters';
 import { defaultWalletId, walletsForType } from '@/lib/wallets';
 import { findIncomeCategory, matchCategory } from '@/lib/categories';
+import { markLocalMutation, requestWarm } from '@/lib/route-warm';
 import { createTransaction, type CreateTransactionState } from '@/app/(dashboard)/transactions/add/actions';
 import { updateTransaction } from '@/app/(dashboard)/transactions/[id]/actions';
 import type { Category, ParsedReceipt, TransactionType, Wallet } from '@/types';
@@ -64,6 +66,13 @@ interface ToastState {
 }
 
 const INITIAL: CreateTransactionState = { error: null };
+
+/**
+ * The swipe deck is the biggest piece of this screen and only appears after
+ * several photos are picked, so its code stays out of the page until then.
+ */
+const loadDeck = () => import('@/components/transactions/BatchReviewDeck');
+const BatchReviewDeck = dynamic(loadDeck, { ssr: false });
 
 const WRONG_FORMAT: ToastState = {
   title: 'Ảnh không đúng định dạng',
@@ -196,6 +205,9 @@ export default function QuickInputForm({
       duration: 1600,
     });
     formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // The save emptied the router cache without leaving the page; refill the
+    // other tabs now rather than on the next tick.
+    requestWarm();
     // Runs once per save; the helpers it calls only set state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedAt]);
@@ -222,8 +234,9 @@ export default function QuickInputForm({
     setAiMessage(null);
 
     try {
-      const digest = await hashImage(file);
-      const blob = await downscaleImage(file);
+      // Independent work on the same file: hashing reads the original bytes,
+      // downscaling decodes it onto a canvas. No reason to wait for one first.
+      const [digest, blob] = await Promise.all([hashImage(file), downscaleImage(file)]);
       const body = new FormData();
       body.append('image', blob, 'receipt.jpg');
       body.append('hash', digest);
@@ -277,39 +290,47 @@ export default function QuickInputForm({
     }
 
     const picked = images.slice(0, MAX_RECEIPT_BATCH);
+    // Fetch the review deck's code while the photos are being read, so it is
+    // already here when they are.
+    void loadDeck();
 
     setAiStatus('working');
     setAiMessage(null);
     setProgress({ done: 0, total: picked.length });
 
     try {
+      const send = async (item: { hash: string; blob: Blob }) => {
+        const body = new FormData();
+        body.append('image', item.blob, 'receipt.jpg');
+        body.append('hash', item.hash);
+
+        try {
+          const response = await fetch('/api/ai/parse-receipt', { method: 'POST', body });
+          return { item, parsed: (await response.json()) as ParseResponse };
+        } catch {
+          return { item, parsed: { ok: false, error: 'Không gọi được máy chủ.' } as ParseResponse };
+        } finally {
+          setProgress((current) => (current ? { ...current, done: current.done + 1 } : current));
+        }
+      };
+
       // Decoded one at a time: five full-size iPhone photos on a canvas at once
-      // is more memory than iOS Safari reliably hands out.
+      // is more memory than iOS Safari reliably hands out. But each one is sent
+      // the moment it is ready, so the first is already being read by the AI
+      // while the next is still being shrunk on the phone.
       const prepared: { hash: string; blob: Blob }[] = [];
+      const inFlight: ReturnType<typeof send>[] = [];
       for (const file of picked) {
         const hash = await hashImage(file);
         // The same photo picked twice would pass the server check, which only
         // knows about bills already saved.
         if (prepared.some((item) => item.hash === hash)) continue;
-        prepared.push({ hash, blob: await downscaleImage(file) });
+        const item = { hash, blob: await downscaleImage(file) };
+        prepared.push(item);
+        inFlight.push(send(item));
       }
 
-      const results = await Promise.all(
-        prepared.map(async (item) => {
-          const body = new FormData();
-          body.append('image', item.blob, 'receipt.jpg');
-          body.append('hash', item.hash);
-
-          try {
-            const response = await fetch('/api/ai/parse-receipt', { method: 'POST', body });
-            return { item, parsed: (await response.json()) as ParseResponse };
-          } catch {
-            return { item, parsed: { ok: false, error: 'Không gọi được máy chủ.' } as ParseResponse };
-          } finally {
-            setProgress((current) => (current ? { ...current, done: current.done + 1 } : current));
-          }
-        }),
-      );
+      const results = await Promise.all(inFlight);
 
       const drafts: ReceiptDraft[] = [];
       // Counted apart from the ones dropped for being over the cap, which the
@@ -448,7 +469,12 @@ export default function QuickInputForm({
 
   return (
     <>
-      <form ref={formTopRef} action={formAction} className="scroll-mt-4 space-y-5">
+      <form
+        ref={formTopRef}
+        action={formAction}
+        onSubmit={markLocalMutation}
+        className="scroll-mt-4 space-y-5"
+      >
         <input type="hidden" name="amount" value={amount ?? ''} />
         <input type="hidden" name="type" value={type} />
         <input type="hidden" name="wallet_id" value={walletId} />

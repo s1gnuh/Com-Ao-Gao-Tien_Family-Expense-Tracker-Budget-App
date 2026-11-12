@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import DeleteTransactionButton from '@/components/transactions/DeleteTransactionButton';
@@ -44,17 +45,11 @@ export default async function EditTransactionPage({
   // worth saying about authorship is whose entry is being changed.
   const theirs = row.created_by !== session.id ? row.author?.display_name : null;
 
-  // A short-lived link: the bucket is private, and storage policy only signs it
-  // for someone who can already see this row.
-  const receipt = row.receipt_url
-    ? (await supabase.storage.from(RECEIPT_BUCKET).createSignedUrl(row.receipt_url, 60 * 10)).data
-        ?.signedUrl ?? null
-    : null;
 
   return (
     <div className="space-y-5 py-4">
       <header className="flex items-center gap-3">
-        <Link href="/transactions" aria-label="Quay lại" className="tap text-xl text-muted">
+        <Link href="/transactions" prefetch={false} aria-label="Quay lại" className="tap text-xl text-muted">
           ←
         </Link>
         <h1 className="text-2xl font-semibold">Sửa giao dịch</h1>
@@ -67,27 +62,12 @@ export default async function EditTransactionPage({
         </p>
       )}
 
-      {receipt && (
-        <a
-          href={receipt}
-          target="_blank"
-          rel="noreferrer"
-          className="card tap flex items-center gap-3"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- signed, expiring URL */}
-          <img
-            src={receipt}
-            alt="Ảnh hoá đơn của khoản này"
-            className="h-16 w-16 shrink-0 rounded-xl bg-bg object-cover object-top"
-          />
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium">Ảnh hoá đơn gốc</span>
-            <span className="block text-xs text-muted">Chạm để xem cỡ lớn</span>
-          </span>
-          <span aria-hidden className="shrink-0 text-muted">
-            ›
-          </span>
-        </a>
+      {/* Streamed in after the form: signing the link is one more round trip,
+          and nobody should wait on a thumbnail to start correcting a typo. */}
+      {row.receipt_url && (
+        <Suspense fallback={<div aria-hidden className="card h-[90px] animate-pulse" />}>
+          <ReceiptPreview path={row.receipt_url} />
+        </Suspense>
       )}
 
       <QuickInputForm
@@ -106,5 +86,37 @@ export default async function EditTransactionPage({
         footer={<DeleteTransactionButton id={row.id} />}
       />
     </div>
+  );
+}
+
+/** A short-lived link: the bucket is private, and storage policy only signs it
+ * for someone who can already see this row. */
+async function ReceiptPreview({ path }: { path: string }) {
+  const supabase = await createClient();
+  const { data } = await supabase.storage.from(RECEIPT_BUCKET).createSignedUrl(path, 60 * 10);
+  const url = data?.signedUrl;
+  if (!url) return null;
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="card tap flex items-center gap-3"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- signed, expiring URL */}
+      <img
+        src={url}
+        alt="Ảnh hoá đơn của khoản này"
+        className="h-16 w-16 shrink-0 rounded-xl bg-bg object-cover object-top"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">Ảnh hoá đơn gốc</span>
+        <span className="block text-xs text-muted">Chạm để xem cỡ lớn</span>
+      </span>
+      <span aria-hidden className="shrink-0 text-muted">
+        ›
+      </span>
+    </a>
   );
 }

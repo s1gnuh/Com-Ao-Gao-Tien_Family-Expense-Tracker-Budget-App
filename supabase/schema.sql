@@ -212,6 +212,24 @@ as $$
   );
 $$;
 
+-- The same reach as a set, for policies. A policy written as
+-- can_access_wallet(wallet_id) runs that lookup once for every row it looks
+-- at, and wallet_balances sums every transaction the household ever entered,
+-- so each screen got slower with every month of history. Written as
+-- `wallet_id in (select public.my_wallet_ids())` Postgres runs it once per
+-- statement and checks rows against the result — the pattern Supabase's own
+-- RLS performance guide recommends. A household has a handful of wallets, so
+-- the set is tiny.
+create or replace function public.my_wallet_ids()
+returns setof uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select id from public.wallets where owner_id = auth.uid() or type = 'shared';
+$$;
+
 -- Google's daily quota rolls over at midnight Pacific, not at midnight here and
 -- not at midnight UTC, which is what the database would otherwise count by.
 -- Naming the zone rather than an offset keeps it right across US daylight saving.
@@ -374,26 +392,26 @@ create policy categories_write on public.categories
 -- correct it instead of chasing whoever typed it — the same rule recurring
 -- bills already follow. created_by still records who entered it, which is what
 -- member_breakdown() reports on; a wallet nobody else can see stays that way,
--- because can_access_wallet() is what decides reach here.
+-- because my_wallet_ids() is what decides reach here.
 drop policy if exists transactions_select on public.transactions;
 create policy transactions_select on public.transactions
-  for select to authenticated using (public.can_access_wallet(wallet_id));
+  for select to authenticated using (wallet_id in (select public.my_wallet_ids()));
 
 drop policy if exists transactions_insert on public.transactions;
 create policy transactions_insert on public.transactions
   for insert to authenticated
-  with check (public.can_access_wallet(wallet_id) and created_by = auth.uid());
+  with check (wallet_id in (select public.my_wallet_ids()) and created_by = (select auth.uid()));
 
 drop policy if exists transactions_update_own on public.transactions;
 drop policy if exists transactions_update on public.transactions;
 create policy transactions_update on public.transactions
   for update to authenticated
-  using (public.can_access_wallet(wallet_id)) with check (public.can_access_wallet(wallet_id));
+  using (wallet_id in (select public.my_wallet_ids())) with check (wallet_id in (select public.my_wallet_ids()));
 
 drop policy if exists transactions_delete_own on public.transactions;
 drop policy if exists transactions_delete on public.transactions;
 create policy transactions_delete on public.transactions
-  for delete to authenticated using (public.can_access_wallet(wallet_id));
+  for delete to authenticated using (wallet_id in (select public.my_wallet_ids()));
 
 -- The AI tally is a household-wide number everyone may read. There is no write
 -- policy on purpose: bump_ai_usage() is the only way in, so the count cannot be
@@ -431,12 +449,12 @@ create policy passkeys_delete_own on public.passkeys
 -- Budgets follow wallet access; the shared budget is set collaboratively.
 drop policy if exists budgets_select on public.budgets;
 create policy budgets_select on public.budgets
-  for select to authenticated using (public.can_access_wallet(wallet_id));
+  for select to authenticated using (wallet_id in (select public.my_wallet_ids()));
 
 drop policy if exists budgets_write on public.budgets;
 create policy budgets_write on public.budgets
   for all to authenticated
-  using (public.can_access_wallet(wallet_id)) with check (public.can_access_wallet(wallet_id));
+  using (wallet_id in (select public.my_wallet_ids())) with check (wallet_id in (select public.my_wallet_ids()));
 
 -- Recurring bills follow wallet access: the household manages the shared fund's
 -- bills together, and a personal wallet's bills stay with its owner.
@@ -444,21 +462,21 @@ alter table public.recurring_bills enable row level security;
 
 drop policy if exists bills_select on public.recurring_bills;
 create policy bills_select on public.recurring_bills
-  for select to authenticated using (public.can_access_wallet(wallet_id));
+  for select to authenticated using (wallet_id in (select public.my_wallet_ids()));
 
 drop policy if exists bills_insert on public.recurring_bills;
 create policy bills_insert on public.recurring_bills
   for insert to authenticated
-  with check (public.can_access_wallet(wallet_id) and created_by = auth.uid());
+  with check (wallet_id in (select public.my_wallet_ids()) and created_by = (select auth.uid()));
 
 drop policy if exists bills_update on public.recurring_bills;
 create policy bills_update on public.recurring_bills
   for update to authenticated
-  using (public.can_access_wallet(wallet_id)) with check (public.can_access_wallet(wallet_id));
+  using (wallet_id in (select public.my_wallet_ids())) with check (wallet_id in (select public.my_wallet_ids()));
 
 drop policy if exists bills_delete on public.recurring_bills;
 create policy bills_delete on public.recurring_bills
-  for delete to authenticated using (public.can_access_wallet(wallet_id));
+  for delete to authenticated using (wallet_id in (select public.my_wallet_ids()));
 
 -- ---------------------------------------------------------------- views
 
@@ -679,6 +697,8 @@ create policy receipts_delete_own on storage.objects
 alter table public.transactions replica identity full;
 alter table public.budgets replica identity full;
 alter table public.recurring_bills replica identity full;
+-- Wallets too: a rename or an archived wallet on one phone shows on the others.
+alter table public.wallets replica identity full;
 do $$ begin
   alter publication supabase_realtime add table public.transactions;
 exception when duplicate_object then null; end $$;
@@ -687,6 +707,9 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 do $$ begin
   alter publication supabase_realtime add table public.recurring_bills;
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table public.wallets;
 exception when duplicate_object then null; end $$;
 
 -- ---------------------------------------------------------------- seed

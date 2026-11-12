@@ -7,6 +7,8 @@ import { markBillPaid, deleteBill, type BillState } from '@/app/(dashboard)/bill
 import { CYCLE_LABEL, STATUS_LABEL } from '@/lib/bills';
 import { formatDate, formatVND } from '@/lib/formatters';
 import type { BillStatus, BillWithStatus, Category, Profile, Wallet } from '@/types';
+import { useWarmAfter } from '@/lib/use-refresh';
+import { markLocalMutation } from '@/lib/route-warm';
 
 const INITIAL: BillState = { error: null, ok: false };
 
@@ -98,6 +100,8 @@ function BillRow({
 }) {
   const [payState, payAction, paying] = useActionState(markBillPaid, INITIAL);
   const [deleteState, deleteAction, deleting] = useActionState(deleteBill, INITIAL);
+  useWarmAfter(payState, INITIAL);
+  useWarmAfter(deleteState, INITIAL);
   const [confirming, setConfirming] = useState(false);
 
   const { bill, status, dueOn, daysLeft } = entry;
@@ -147,7 +151,7 @@ function BillRow({
             >
               Giữ lại
             </button>
-            <form action={deleteAction}>
+            <form action={deleteAction} onSubmit={markLocalMutation}>
               <input type="hidden" name="id" value={bill.id} />
               <button
                 type="submit"
@@ -161,7 +165,7 @@ function BillRow({
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          <form action={payAction}>
+          <form action={payAction} onSubmit={markLocalMutation}>
             <input type="hidden" name="id" value={bill.id} />
             <button
               type="submit"

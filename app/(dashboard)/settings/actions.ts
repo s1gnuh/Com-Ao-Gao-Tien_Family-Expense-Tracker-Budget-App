@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, readSessionFast } from '@/lib/supabase/server';
 import { buildReminderPayload, collectReminderFacts, sendPush } from '@/lib/push';
 
 export interface ActionState {
@@ -12,13 +12,25 @@ export interface ActionState {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Who is asking, read from the session cookie with no network call — getUser()
+ * put a 300-400ms trip to the auth server in front of every setting saved.
+ * The id is not trusted for anything: every statement below is checked by RLS
+ * against the token Postgres validates itself (user_id = auth.uid(), and so
+ * on), so a wrong or forged id matches nothing or is refused. Same rule the
+ * wallet, bill and transaction actions already follow.
+ */
+async function sessionUserId(): Promise<string | null> {
+  return (await readSessionFast()).id;
+}
+
 export async function updateProfile(
   _previous: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+  const userId = await sessionUserId();
+  if (!userId) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
   const displayName = String(formData.get('display_name') ?? '').trim();
   if (displayName.length === 0) return { error: 'Tên hiển thị không được để trống.', ok: false };
@@ -34,7 +46,7 @@ export async function updateProfile(
   const birthdayRaw = String(formData.get('birthday') ?? '').trim();
   const birthday = /^\d{4}-\d{2}-\d{2}$/.test(birthdayRaw) ? birthdayRaw : null;
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('profiles')
     .update({
       display_name: displayName,
@@ -45,9 +57,10 @@ export async function updateProfile(
       birthday,
       note: optional('note', 200),
     })
-    .eq('id', auth.user.id);
+    .eq('id', userId)
+    .select('id');
 
-  if (error) return { error: 'Không lưu được hồ sơ.', ok: false };
+  if (error || !updated?.length) return { error: 'Không lưu được hồ sơ.', ok: false };
 
   revalidatePath('/settings');
   revalidatePath('/');
@@ -59,8 +72,8 @@ export async function saveBudgets(
   formData: FormData,
 ): Promise<ActionState> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+  const userId = await sessionUserId();
+  if (!userId) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
   const walletId = String(formData.get('wallet_id') ?? '');
   if (!UUID.test(walletId)) return { error: 'Chưa chọn ví.', ok: false };
@@ -122,8 +135,8 @@ export async function enablePush(
   remindHour: number,
 ): Promise<ActionState> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+  const userId = await sessionUserId();
+  if (!userId) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
   if (!subscription?.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
     return { error: 'Đăng ký thông báo không hợp lệ.', ok: false };
@@ -135,7 +148,7 @@ export async function enablePush(
   const [subResult, prefResult] = await Promise.all([
     supabase.from('push_subscriptions').upsert(
       {
-        user_id: auth.user.id,
+        user_id: userId,
         endpoint: subscription.endpoint,
         p256dh: subscription.keys.p256dh,
         auth: subscription.keys.auth,
@@ -144,7 +157,7 @@ export async function enablePush(
     ),
     supabase
       .from('notification_preferences')
-      .upsert({ user_id: auth.user.id, enabled: true, remind_hour: remindHour }, { onConflict: 'user_id' }),
+      .upsert({ user_id: userId, enabled: true, remind_hour: remindHour }, { onConflict: 'user_id' }),
   ]);
 
   if (subResult.error) return { error: 'Không lưu được đăng ký thông báo.', ok: false };
@@ -161,16 +174,16 @@ export async function enablePush(
  */
 export async function disablePush(endpoint: string | null, remindHour: number): Promise<ActionState> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+  const userId = await sessionUserId();
+  if (!userId) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
   const [subResult, prefResult] = await Promise.all([
     endpoint
-      ? supabase.from('push_subscriptions').delete().eq('user_id', auth.user.id).eq('endpoint', endpoint)
+      ? supabase.from('push_subscriptions').delete().eq('user_id', userId).eq('endpoint', endpoint)
       : Promise.resolve({ error: null }),
     supabase
       .from('notification_preferences')
-      .upsert({ user_id: auth.user.id, enabled: false, remind_hour: remindHour }, { onConflict: 'user_id' }),
+      .upsert({ user_id: userId, enabled: false, remind_hour: remindHour }, { onConflict: 'user_id' }),
   ]);
 
   if (subResult.error) return { error: 'Không xoá được đăng ký thông báo.', ok: false };
@@ -185,8 +198,8 @@ export async function updateNotificationPrefs(
   remindHour: number,
 ): Promise<ActionState> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+  const userId = await sessionUserId();
+  if (!userId) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
   if (!Number.isInteger(remindHour) || remindHour < 0 || remindHour > 23) {
     return { error: 'Giờ nhắc không hợp lệ.', ok: false };
@@ -194,7 +207,7 @@ export async function updateNotificationPrefs(
 
   const { error } = await supabase
     .from('notification_preferences')
-    .upsert({ user_id: auth.user.id, enabled, remind_hour: remindHour }, { onConflict: 'user_id' });
+    .upsert({ user_id: userId, enabled, remind_hour: remindHour }, { onConflict: 'user_id' });
 
   if (error) return { error: 'Không lưu được cài đặt nhắc nhở.', ok: false };
 
@@ -210,12 +223,12 @@ export async function updateNotificationPrefs(
  */
 export async function sendTestNotification(): Promise<ActionState> {
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { error: 'Phiên đăng nhập đã hết.', ok: false };
+  const userId = await sessionUserId();
+  if (!userId) return { error: 'Phiên đăng nhập đã hết.', ok: false };
 
   const [subsResult, facts] = await Promise.all([
-    supabase.from('push_subscriptions').select('id,endpoint,p256dh,auth').eq('user_id', auth.user.id),
-    collectReminderFacts(supabase, auth.user.id),
+    supabase.from('push_subscriptions').select('id,endpoint,p256dh,auth').eq('user_id', userId),
+    collectReminderFacts(supabase, userId),
   ]);
 
   const subs = subsResult.data ?? [];

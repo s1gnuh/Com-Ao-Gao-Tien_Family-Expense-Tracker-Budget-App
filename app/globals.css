@@ -105,7 +105,7 @@ html[data-splash='seen'] #cagt-splash {
  * the app behind it forever. This retires it on a pure-CSS timer regardless.
  */
 .splash-failsafe {
-  animation: cagt-failsafe 1ms linear 8s forwards;
+  animation: cagt-failsafe 1ms linear 4s forwards;
 }
 
 @keyframes cagt-failsafe {

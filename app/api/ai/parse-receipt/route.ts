@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { GeminiError, parseReceiptImage } from '@/lib/gemini';
-import { createClient, getSessionUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { RECEIPT_BUCKET, receiptObjectPath } from '@/lib/receipts';
 import type { ApiResult, ParsedReceipt } from '@/types';
 
@@ -19,10 +19,8 @@ function fail(error: string, status: number) {
 }
 
 export async function POST(request: Request) {
-  // Gated on a real session so the free-tier Gemini quota can't be drained.
-  const user = await getSessionUser();
-  if (!user) return fail('Chưa đăng nhập.', 401);
-
+  // Parsed first: it is local work, and a bad upload should not cost a single
+  // round trip to find out.
   let file: File | null = null;
   let hash = '';
   try {
@@ -40,67 +38,76 @@ export async function POST(request: Request) {
   if (!ALLOWED_TYPES.includes(file.type)) return fail('Định dạng ảnh không được hỗ trợ.', 415);
 
   const supabase = await createClient();
+  const hashed = SHA256_HEX.test(hash);
+
+  // Identity and the duplicate check at the same time rather than one after
+  // the other. getClaims() verifies the token right here when the project signs
+  // with asymmetric keys, and only falls back to asking the auth server
+  // (what getUser() always did, 300-400ms) when it cannot. The duplicate query
+  // carries the same token, so an unauthenticated caller simply sees no rows.
+  const [claimsResult, seenResult] = await Promise.all([
+    supabase.auth.getClaims(),
+    hashed
+      ? supabase
+          .from('transactions')
+          .select('amount,occurred_at,note')
+          .eq('receipt_hash', hash)
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  // Gated on a real session so the free-tier Gemini quota can't be drained.
+  const userId = claimsResult.data?.claims?.sub;
+  if (!userId) return fail('Chưa đăng nhập.', 401);
 
   // Checked before Gemini, not after: a bill already entered costs no tokens.
-  if (SHA256_HEX.test(hash)) {
-    const { data: seen } = await supabase
-      .from('transactions')
-      .select('amount,occurred_at,note')
-      .eq('receipt_hash', hash)
-      .limit(1)
-      .maybeSingle();
-
-    if (seen) {
-      return NextResponse.json<ApiResult<never> & { duplicate: true; seen: typeof seen }>(
-        {
-          ok: false,
-          error: 'Ảnh này đã được tải lên rồi.',
-          duplicate: true,
-          seen,
-        },
-        { status: 409 },
-      );
-    }
+  const seen = seenResult.data;
+  if (seen) {
+    return NextResponse.json<ApiResult<never> & { duplicate: true; seen: typeof seen }>(
+      {
+        ok: false,
+        error: 'Ảnh này đã được tải lên rồi.',
+        duplicate: true,
+        seen,
+      },
+      { status: 409 },
+    );
   }
 
+  const bytes = Buffer.from(await file.arrayBuffer());
+  // The photo is filed while Gemini reads it rather than after, so keeping it
+  // costs no extra wait. Only a JPEG with a real hash is kept: that is what the
+  // app's own downscaler sends, and the hash is what names the file.
+  const path = hashed && file.type === 'image/jpeg' ? receiptObjectPath(userId, hash) : null;
+  const storing = path ? storeReceipt(supabase, path, bytes) : Promise.resolve(false);
+
   try {
-    const bytes = Buffer.from(await file.arrayBuffer());
-    // The photo is filed while Gemini reads it rather than after, so keeping it
-    // costs no extra wait. Only a JPEG with a real hash is kept: that is what the
-    // app's own downscaler sends, and the hash is what names the file.
-    const keep = SHA256_HEX.test(hash) && file.type === 'image/jpeg';
-    const path = keep ? receiptObjectPath(user.id, hash) : null;
-
-    const storing = path ? storeReceipt(supabase, path, bytes) : Promise.resolve(false);
-
-    let parsed: ParsedReceipt;
-    try {
-      parsed = await parseReceiptImage(bytes.toString('base64'), file.type);
-    } catch (error) {
-      // Gemini failed: no row will reference the photo, so do not keep it.
-      if (await storing) await supabase.storage.from(RECEIPT_BUCKET).remove([path!]);
-      throw error;
-    }
-
+    const parsed = await parseReceiptImage(bytes.toString('base64'), file.type);
     const stored = await storing;
-    await countCall(supabase);
+    const keep = stored && parsed.amount !== null;
 
-    // Not a receipt after all: nothing will ever point at the file, so it goes.
-    if (stored && parsed.amount === null) {
-      await supabase.storage.from(RECEIPT_BUCKET).remove([path!]);
-    }
+    // Bookkeeping the person is not waiting on runs after the answer is sent:
+    // the tally, and dropping the photo if it turned out not to be a receipt.
+    after(async () => {
+      await countCall(supabase);
+      if (stored && !keep) await supabase.storage.from(RECEIPT_BUCKET).remove([path!]);
+    });
 
     return NextResponse.json<ApiResult<ParsedReceipt>>({
       ok: true,
-      data: { ...parsed, receipt_path: stored && parsed.amount !== null ? path : null },
+      data: { ...parsed, receipt_path: keep ? path : null },
     });
   } catch (error) {
-    if (error instanceof GeminiError) {
+    after(async () => {
       // A 429 was turned away before it cost a request; anything else reached
       // the model, so it is spent whether or not we could read the answer.
-      if (error.status !== 429) await countCall(supabase);
-      return fail(error.message, error.status);
-    }
+      if (!(error instanceof GeminiError && error.status === 429)) await countCall(supabase);
+      // Gemini failed: no row will reference the photo, so do not keep it.
+      if (await storing) await supabase.storage.from(RECEIPT_BUCKET).remove([path!]);
+    });
+
+    if (error instanceof GeminiError) return fail(error.message, error.status);
     return fail('Không bóc tách được hoá đơn, vui lòng nhập tay.', 500);
   }
 }

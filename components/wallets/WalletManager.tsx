@@ -12,6 +12,8 @@ import {
 } from '@/app/(dashboard)/wallets/actions';
 import { formatVND } from '@/lib/formatters';
 import type { Wallet } from '@/types';
+import { useWarmAfter } from '@/lib/use-refresh';
+import { markLocalMutation } from '@/lib/route-warm';
 
 const INITIAL: WalletState = { error: null, ok: false };
 
@@ -34,6 +36,9 @@ export function WalletCard({ data }: { data: WalletCardData }) {
   const [renameState, renameAction, renamingBusy] = useActionState(renameWallet, INITIAL);
   const [archiveState, archiveAction, archiving] = useActionState(archiveWallet, INITIAL);
   const [restoreState, restoreAction, restoring] = useActionState(restoreWallet, INITIAL);
+  useWarmAfter(renameState, INITIAL);
+  useWarmAfter(archiveState, INITIAL);
+  useWarmAfter(restoreState, INITIAL);
 
   useEffect(() => {
     if (renameState.ok) setRenaming(false);
@@ -46,7 +51,7 @@ export function WalletCard({ data }: { data: WalletCardData }) {
 
   if (renaming) {
     return (
-      <form action={renameAction} className="card space-y-3">
+      <form action={renameAction} onSubmit={markLocalMutation} className="card space-y-3">
         <input type="hidden" name="id" value={data.wallet_id} />
         <Input
           label="Tên ví"
@@ -143,7 +148,7 @@ export function WalletCard({ data }: { data: WalletCardData }) {
       {data.manageable && (
         <div className="mt-3">
           {data.is_archived ? (
-            <form action={restoreAction}>
+            <form action={restoreAction} onSubmit={markLocalMutation}>
               <input type="hidden" name="id" value={data.wallet_id} />
               <button
                 type="submit"
@@ -166,7 +171,7 @@ export function WalletCard({ data }: { data: WalletCardData }) {
                 >
                   Giữ lại
                 </button>
-                <form action={archiveAction}>
+                <form action={archiveAction} onSubmit={markLocalMutation}>
                   <input type="hidden" name="id" value={data.wallet_id} />
                   <button
                     type="submit"
@@ -205,6 +210,7 @@ export function WalletCard({ data }: { data: WalletCardData }) {
 export function AddWalletCard() {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createWallet, INITIAL);
+  useWarmAfter(state, INITIAL);
 
   useEffect(() => {
     if (state.ok) setOpen(false);
@@ -219,7 +225,7 @@ export function AddWalletCard() {
   }
 
   return (
-    <form action={formAction} className="card space-y-3">
+    <form action={formAction} onSubmit={markLocalMutation} className="card space-y-3">
       <Input
         label="Tên ví mới"
         name="name"

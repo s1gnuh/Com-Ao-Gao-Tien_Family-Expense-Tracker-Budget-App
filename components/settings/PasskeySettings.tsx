@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { deletePasskey } from '@/app/(dashboard)/settings/actions';
 import { markEnrolled, passkeyAvailable, registerPasskey } from '@/lib/passkey-client';
 import { formatDate } from '@/lib/formatters';
+import { useRefresh } from '@/lib/use-refresh';
 
 export interface PasskeyRow {
   id: string;
@@ -15,7 +15,7 @@ export interface PasskeyRow {
 }
 
 export default function PasskeySettings({ passkeys }: { passkeys: PasskeyRow[] }) {
-  const router = useRouter();
+  const { refresh } = useRefresh();
   const [available, setAvailable] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [removing, startRemoving] = useTransition();
@@ -33,7 +33,7 @@ export default function PasskeySettings({ passkeys }: { passkeys: PasskeyRow[] }
     setBusy(false);
     if (result.ok) {
       setNote({ tone: 'ok', text: 'Đã bật! Lần sau mở app chỉ cần nhìn vào máy.' });
-      router.refresh();
+      refresh();
     } else if (!result.cancelled) {
       setNote({ tone: 'error', text: result.error });
     }
@@ -52,7 +52,7 @@ export default function PasskeySettings({ passkeys }: { passkeys: PasskeyRow[] }
       // Cannot tell which row is this phone, so only drop the hint when none are left.
       if (passkeys.length <= 1) markEnrolled(false);
       setNote({ tone: 'ok', text: 'Đã gỡ thiết bị.' });
-      router.refresh();
+      refresh();
     });
   }
 

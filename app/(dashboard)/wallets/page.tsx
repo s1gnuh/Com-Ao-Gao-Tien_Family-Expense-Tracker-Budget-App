@@ -92,6 +92,7 @@ export default async function WalletsPage() {
 
       <Link
         href="/bills"
+        prefetch={false}
         className="tap flex items-center justify-between gap-3 rounded-card border border-border bg-surface p-4"
       >
         <span className="min-w-0">

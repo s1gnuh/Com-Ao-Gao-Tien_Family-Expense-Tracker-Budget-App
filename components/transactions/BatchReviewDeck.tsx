@@ -5,6 +5,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import AmountInput from '@/components/ui/AmountInput';
 import { findIncomeCategory } from '@/lib/categories';
+import { markLocalMutation } from '@/lib/route-warm';
 import { createTransactionsBatch } from '@/app/(dashboard)/transactions/add/actions';
 import { formatDate, formatVND, parseAmountInput } from '@/lib/formatters';
 import { defaultWalletId, walletsForType } from '@/lib/wallets';
@@ -221,6 +222,7 @@ export default function BatchReviewDeck({
       receipt_url: draft.receiptPath,
     }));
 
+    markLocalMutation();
     startSaving(async () => {
       const result = await createTransactionsBatch(rows);
       if (result?.error) setError(result.error);

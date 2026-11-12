@@ -43,7 +43,7 @@ export default async function BillsPage() {
     <div className="space-y-5 py-4">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link href="/wallets" className="tap text-sm text-muted">
+          <Link href="/wallets" prefetch={false} className="tap text-sm text-muted">
             ← Ví & Quỹ
           </Link>
           <h1 className="mt-1 text-2xl font-semibold">Hoá đơn định kỳ</h1>

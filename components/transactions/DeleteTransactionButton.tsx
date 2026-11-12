@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react';
 import { deleteTransaction, type EditTransactionState } from '@/app/(dashboard)/transactions/[id]/actions';
+import { markLocalMutation } from '@/lib/route-warm';
 
 const INITIAL: EditTransactionState = { error: null };
 
@@ -44,7 +45,7 @@ export default function DeleteTransactionButton({ id }: { id: string }) {
           Giữ lại
         </button>
 
-        <form action={formAction}>
+        <form action={formAction} onSubmit={markLocalMutation}>
           <input type="hidden" name="id" value={id} />
           <button
             type="submit"

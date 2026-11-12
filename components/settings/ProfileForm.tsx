@@ -5,6 +5,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { updateProfile, type ActionState } from '@/app/(dashboard)/settings/actions';
 import type { Profile } from '@/types';
+import { useWarmAfter } from '@/lib/use-refresh';
 
 const INITIAL: ActionState = { error: null, ok: false };
 const EMOJIS = ['🙂', '👨', '👩', '👦', '👧', '🧑', '👴', '👵'];
@@ -18,6 +19,7 @@ interface ProfileFormProps {
 
 export default function ProfileForm({ profile, username, fallbackName }: ProfileFormProps) {
   const [state, formAction, pending] = useActionState(updateProfile, INITIAL);
+  useWarmAfter(state, INITIAL);
   const [open, setOpen] = useState(false);
   const [emoji, setEmoji] = useState(profile?.avatar_emoji ?? '🙂');
   const [role, setRole] = useState(profile?.family_role ?? '');

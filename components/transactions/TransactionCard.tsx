@@ -1,5 +1,9 @@
+'use client';
+
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { formatSigned } from '@/lib/formatters';
+import { intentPrefetch } from '@/lib/route-warm';
 import type { TransactionWithRelations } from '@/types';
 
 interface TransactionCardProps {
@@ -14,6 +18,7 @@ export default function TransactionCard({
   walletName,
   editable = false,
 }: TransactionCardProps) {
+  const router = useRouter();
   const { id, type, amount, note, category, author, source } = transaction;
 
   const body = (
@@ -56,6 +61,10 @@ export default function TransactionCard({
       {editable ? (
         <Link
           href={`/transactions/${id}`}
+          // Not every row up front — a month can hold dozens — but in full the
+          // moment a finger lands on one.
+          prefetch={false}
+          {...intentPrefetch(router, `/transactions/${id}`)}
           className="tap -mx-1 flex items-center gap-3 rounded-xl px-1 py-3"
         >
           {body}

@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import TransactionCard from './TransactionCard';
+import { intentPrefetch } from '@/lib/route-warm';
 import { formatCompactVND, formatDate, formatVND, todayInput } from '@/lib/formatters';
 import type { TransactionWithRelations } from '@/types';
 
@@ -35,6 +37,7 @@ export default function TransactionCalendar({
   nextMonth,
   monthLabel,
 }: TransactionCalendarProps) {
+  const router = useRouter();
   const [selected, setSelected] = useState<string | null>(null);
 
   const totalsByDay = useMemo(
@@ -58,6 +61,8 @@ export default function TransactionCalendar({
         <header className="mb-3 flex items-center justify-between">
           <Link
             href={`/transactions?m=${prevMonth}`}
+            prefetch={false}
+            {...intentPrefetch(router, `/transactions?m=${prevMonth}`)}
             aria-label="Tháng trước"
             className="tap flex h-9 w-9 items-center justify-center rounded-full text-muted"
           >
@@ -66,6 +71,8 @@ export default function TransactionCalendar({
           <p className="text-sm font-medium capitalize">{monthLabel}</p>
           <Link
             href={`/transactions?m=${nextMonth}`}
+            prefetch={false}
+            {...intentPrefetch(router, `/transactions?m=${nextMonth}`)}
             aria-label="Tháng sau"
             className="tap flex h-9 w-9 items-center justify-center rounded-full text-muted"
           >

@@ -38,9 +38,9 @@ export default function OnboardingTour() {
     } catch {
       // Private mode throws; showing the tour once more is harmless.
     }
-    // Waits out the splash so the two overlays never stack.
+    // Waits out the splash (1.1s plus its fade) so the two overlays never stack.
     if (!seen) {
-      const timer = setTimeout(() => setStep(0), 5200);
+      const timer = setTimeout(() => setStep(0), 1600);
       return () => clearTimeout(timer);
     }
   }, []);
