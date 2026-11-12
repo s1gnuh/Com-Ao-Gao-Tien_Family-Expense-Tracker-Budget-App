@@ -54,7 +54,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: HIDE_SEEN_SPLASH }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* Shown by CSS only when a phone is held sideways; see globals.css. */}
+        <div id="cagt-rotate" role="alert">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="6" y="2" width="12" height="20" rx="2.5" stroke="rgb(var(--c-brand))" strokeWidth="1.8" />
+            <path d="M10.5 18.5h3" stroke="rgb(var(--c-brand))" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          <p className="text-lg font-semibold">Xoay dọc điện thoại nhé</p>
+          <p className="max-w-xs text-sm text-muted">Cơm Áo Gạo Tiền chỉ dùng ở màn hình dọc.</p>
+        </div>
+      </body>
     </html>
   );
 }

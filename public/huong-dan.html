@@ -34,6 +34,43 @@
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
         line-height: 1.6;
         -webkit-font-smoothing: antialiased;
+        /* Same as the app: no selecting or copying text, no long-press callout. */
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+      }
+
+      img { -webkit-user-drag: none; }
+
+      /* Portrait only, as in the app (see app/globals.css for why a cover). */
+      #cagt-rotate { display: none; }
+      @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+        html { overflow: hidden; }
+        #cagt-rotate {
+          position: fixed;
+          inset: 0;
+          z-index: 2147483647;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 14px;
+          padding: 24px max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left));
+          background: var(--bg);
+          text-align: center;
+          touch-action: none;
+        }
+        #cagt-rotate p { margin: 0; }
+        #cagt-rotate .t { font-size: 18px; font-weight: 600; }
+        #cagt-rotate .s { font-size: 14px; color: var(--muted); }
+        #cagt-rotate svg { animation: cagt-turn-upright 2.4s ease-in-out infinite; }
+      }
+      @keyframes cagt-turn-upright {
+        0%, 20% { transform: rotate(-90deg); }
+        55%, 100% { transform: rotate(0deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #cagt-rotate svg { animation: none; }
       }
 
       .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 0; }
@@ -355,6 +392,15 @@
         <a class="back" href="/settings">← Quay lại app</a>
         <p>Cơm Áo Gạo Tiền — chi tiêu của nhà mình</p>
       </footer>
+    </div>
+
+    <div id="cagt-rotate" role="alert">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="6" y="2" width="12" height="20" rx="2.5" stroke="#f97606" stroke-width="1.8" />
+        <path d="M10.5 18.5h3" stroke="#f97606" stroke-width="1.8" stroke-linecap="round" />
+      </svg>
+      <p class="t">Xoay dọc điện thoại nhé</p>
+      <p class="s">Cơm Áo Gạo Tiền chỉ dùng ở màn hình dọc.</p>
     </div>
   </body>
 </html>

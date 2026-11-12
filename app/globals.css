@@ -56,6 +56,26 @@
   body {
     @apply bg-bg text-fg font-sans antialiased;
     -webkit-tap-highlight-color: transparent;
+    /* An app, not a document: no text selection, so nothing can be
+       highlighted and copied, and a long press opens no copy/share callout. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Fields still have to take typing, caret moves and paste. Without this,
+     older iOS inherits user-select:none into inputs and refuses to edit. */
+  input,
+  textarea,
+  [contenteditable='true'] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  /* Dragging an image out of the page is another way to copy it. */
+  img {
+    -webkit-user-drag: none;
   }
 
   /* iOS Safari zooms the viewport on focus for any font-size under 16px. */
@@ -90,6 +110,59 @@
 
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ------------------------------------------------------- portrait lock */
+
+/*
+ * The manifest asks for portrait, but iOS ignores that in Safari and in a
+ * home-screen app alike, and no web API can lock rotation there. So a phone
+ * held sideways gets a full-screen cover asking to turn it back.
+ *
+ * max-height: 500px matches a phone on its side (the tallest is ~440px) but
+ * not a tablet, which has room for the layout either way. pointer: coarse
+ * keeps a short desktop window out of it.
+ */
+#cagt-rotate {
+  display: none;
+}
+
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  html {
+    overflow: hidden;
+  }
+
+  #cagt-rotate {
+    position: fixed;
+    inset: 0;
+    /* Above everything, the splash (z-100) included. */
+    z-index: 2147483647;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 24px max(24px, env(safe-area-inset-right)) 24px max(24px, env(safe-area-inset-left));
+    background-color: rgb(var(--c-bg));
+    color: rgb(var(--c-fg));
+    text-align: center;
+    touch-action: none;
+  }
+
+  #cagt-rotate svg {
+    animation: cagt-turn-upright 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes cagt-turn-upright {
+  0%,
+  20% {
+    transform: rotate(-90deg);
+  }
+  55%,
+  100% {
+    transform: rotate(0deg);
   }
 }
 
